@@ -3,8 +3,14 @@
   "version": "0.0.0",
   "description": "Distributed scalable database",
   "main": "index.js",
-  "dependencies": {},
-  "devDependencies": {},
+  "dependencies": {
+    "array-lru": "^1.1.1",
+    "sodium-universal": "^1.0.0"
+  },
+  "devDependencies": {
+    "hypercore": "^6.3.6",
+    "random-access-memory": "^2.4.0"
+  },
   "repository": {
     "type": "git",
     "url": "https://github.com/mafintosh/hyperdb.git"
