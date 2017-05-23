@@ -1,0 +1,18 @@
+{
+  "name": "hyperdb",
+  "version": "0.0.0",
+  "description": "Distributed scalable database",
+  "main": "index.js",
+  "dependencies": {},
+  "devDependencies": {},
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/mafintosh/hyperdb.git"
+  },
+  "author": "Mathias Buus (@mafintosh)",
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/mafintosh/hyperdb/issues"
+  },
+  "homepage": "https://github.com/mafintosh/hyperdb"
+}
