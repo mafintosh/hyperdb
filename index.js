@@ -180,7 +180,7 @@ DB.prototype._getAll = function (pointers, cb) {
   var self = this
 
   pointers.forEach(function (ptr, i) {
-    self._get(ptr.seq, function (err, node) {
+    self._getValue(ptr.seq, function (err, node) {
       if (err) error = err
       if (node) all[i] = node
       if (--missing) return
@@ -191,7 +191,7 @@ DB.prototype._getAll = function (pointers, cb) {
   })
 }
 
-DB.prototype._get = function (seq, cb) {
+DB.prototype._getValue = function (seq, cb) {
   var self = this
   var cached = this.cache.get(seq)
   if (cached) return process.nextTick(cb, null, cached)
@@ -208,7 +208,7 @@ DB.prototype.head = function (cb) {
   this.ready(function (err) {
     if (err) return cb(err)
     if (!self.writer.length) return cb(null, null)
-    self._get(self.writer.length - 1, cb)
+    self._getValue(self.writer.length - 1, cb)
   })
 }
 
