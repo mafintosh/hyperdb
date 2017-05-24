@@ -155,7 +155,7 @@ test('example', function (assert) {
     return function (cb) {
       db.put(key, value, function (err) {
         if (err) return cb(err)
-        return cb()
+        setImmediate(cb) // wait for in-memory hypercore's to sync
       })
     }
   }
@@ -164,7 +164,7 @@ test('example', function (assert) {
       db.get(key, function (err, nodes) {
         if (err) return cb(err)
         assert.deepEquals(nodes.map(function (n) { return n.value }).sort(), values)
-        return cb()
+        setImmediate(cb) // wait for in-memory hypercore's to sync
       })
     }
   }
