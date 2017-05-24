@@ -12,6 +12,7 @@
   "devDependencies": {
     "hypercore": "^6.3.6",
     "random-access-memory": "^2.4.0",
+    "run-series": "^1.1.4",
     "standard": "^10.0.2",
     "tape": "^4.6.3"
   },
