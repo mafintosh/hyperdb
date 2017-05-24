@@ -1,7 +1,9 @@
 var sodium = require('sodium-universal')
 var alru = require('array-lru')
+var allocUnsafe = require('buffer-alloc-unsafe')
+var toBuffer = require('to-buffer')
 
-var KEY = Buffer.alloc(sodium.crypto_shorthash_KEYBYTES)
+var KEY = allocUnsafe(sodium.crypto_shorthash_KEYBYTES).fill(0)
 
 module.exports = DB
 
@@ -49,7 +51,7 @@ DB.prototype._closer = function (path, cmp, ptrs, cb) {
 }
 
 DB.prototype.get = function (key, cb) {
-  var h = hash(new Buffer(key))
+  var h = hash(toBuffer(key))
   var path = splitHash(h)
 
   var self = this
@@ -88,7 +90,7 @@ DB.prototype._get = function (head, key, path, cb) {
 }
 
 DB.prototype.put = function (key, value, cb) {
-  var h = hash(new Buffer(key))
+  var h = hash(toBuffer(key))
   var path = splitHash(h)
 
   var self = this
@@ -135,7 +137,6 @@ DB.prototype.put = function (key, value, cb) {
       self._list(head, path.slice(0, end), loop)
     }
   })
-
 }
 
 DB.prototype._getAll = function (pointers, cb) {
@@ -180,7 +181,7 @@ DB.prototype.head = function (cb) {
 }
 
 function hash (key) {
-  var out = new Buffer(8)
+  var out = allocUnsafe(8)
   sodium.crypto_shorthash(out, key, KEY)
   return out
 }
