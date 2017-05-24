@@ -53,3 +53,16 @@ test('put/get', function (assert) {
     })
   })
 })
+
+test('writable', function (assert) {
+  var db = hyperdb([
+    hypercore(ram, {valueEncoding: 'json'})
+  ])
+
+  assert.equals(db.writable, false)
+  db.ready(function (err) {
+    assert.error(err)
+    assert.equals(db.writable, true)
+    assert.end()
+  })
+})

@@ -19,6 +19,9 @@ function DB (feeds) {
   this.writer = null
   this.ready = thunky(open)
 
+  this.readable = true
+  this.writable = false
+
   function open (cb) {
     self._open(cb)
   }
@@ -39,7 +42,10 @@ DB.prototype._open = function (cb) {
     if (error) return cb(error)
 
     for (var i = 0; i < self.feeds.length; i++) {
-      if (self.feeds[i].writable) self.writer = self.feeds[i]
+      if (self.feeds[i].writable) {
+        self.writer = self.feeds[i]
+        self.writable = true
+      }
     }
 
     cb(null)
