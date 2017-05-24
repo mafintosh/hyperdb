@@ -2,6 +2,7 @@ var test = require('tape')
 var hyperdb = require('.')
 var hypercore = require('hypercore')
 var ram = require('random-access-memory')
+var allocUnsafe = require('buffer-alloc-unsafe')
 
 test('init', function (assert) {
   var db = hyperdb([
@@ -77,6 +78,19 @@ test('readable', function (assert) {
     assert.error(err)
     assert.equals(db.writable, false)
     assert.equals(db.readable, false)
+    assert.end()
+  })
+})
+
+test('read-only', function (assert) {
+  var a = hypercore(ram, allocUnsafe(32), {valueEncoding: 'json'})
+  var b = hypercore(ram, allocUnsafe(32), {valueEncoding: 'json'})
+
+  var db = hyperdb([a, b])
+
+  db.ready(function (err) {
+    assert.error(err)
+    assert.equals(db.writable, false)
     assert.end()
   })
 })
