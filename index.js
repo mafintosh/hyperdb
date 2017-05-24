@@ -52,6 +52,37 @@ DB.prototype._open = function (cb) {
   }
 }
 
+DB.prototype.close = function (cb) {
+  var self = this
+  self.ready(function (err) {
+    if (err) return cb(err)
+
+    self._close(cb)
+  })
+}
+
+DB.prototype._close = function (cb) {
+  var missing = this.feeds.length
+  var error = null
+
+  for (var i = 0; i < this.feeds.length; i++) {
+    this.feeds[i].close(onclose)
+  }
+
+  var self = this
+
+  function onclose (err) {
+    if (err) error = err
+    if (--missing) return
+    if (error) return cb(error)
+
+    self.readable = false
+    self.writable = false
+
+    cb(null)
+  }
+}
+
 DB.prototype._list = function (head, path, cb) {
   var self = this
 

@@ -66,3 +66,17 @@ test('writable', function (assert) {
     assert.end()
   })
 })
+
+test('readable', function (assert) {
+  var db = hyperdb([
+    hypercore(ram, {valueEncoding: 'json'})
+  ])
+
+  assert.equals(db.readable, true)
+  db.close(function (err) {
+    assert.error(err)
+    assert.equals(db.writable, false)
+    assert.equals(db.readable, false)
+    assert.end()
+  })
+})
