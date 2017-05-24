@@ -2,6 +2,7 @@ var sodium = require('sodium-universal')
 var alru = require('array-lru')
 var allocUnsafe = require('buffer-alloc-unsafe')
 var toBuffer = require('to-buffer')
+var thunky = require('thunky')
 
 var KEY = allocUnsafe(sodium.crypto_shorthash_KEYBYTES).fill(0)
 
@@ -9,9 +10,40 @@ module.exports = DB
 
 function DB (feeds) {
   if (!(this instanceof DB)) return new DB(feeds)
+  if (feeds.length < 1) throw new Error('Must pass at least one feed')
+
+  var self = this
+
   this.cache = alru(65536)
   this.feeds = feeds
-  this.writer = feeds[0]
+  this.writer = null
+  this.ready = thunky(open)
+
+  function open (cb) {
+    self._open(cb)
+  }
+}
+
+DB.prototype._open = function (cb) {
+  var missing = this.feeds.length
+  var error = null
+  var self = this
+
+  for (var i = 0; i < this.feeds.length; i++) {
+    this.feeds[i].ready(onready)
+  }
+
+  function onready (err) {
+    if (err) error = err
+    if (--missing) return
+    if (error) return cb(error)
+
+    for (var i = 0; i < self.feeds.length; i++) {
+      if (self.feeds[i].writable) self.writer = self.feeds[i]
+    }
+
+    cb(null)
+  }
 }
 
 DB.prototype._list = function (head, path, cb) {
@@ -173,7 +205,7 @@ DB.prototype._get = function (seq, cb) {
 
 DB.prototype.head = function (cb) {
   var self = this
-  this.writer.ready(function (err) {
+  this.ready(function (err) {
     if (err) return cb(err)
     if (!self.writer.length) return cb(null, null)
     self._get(self.writer.length - 1, cb)
