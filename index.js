@@ -101,6 +101,7 @@ DB.prototype.get = function (key, cb) {
 }
 
 DB.prototype._get = function (head, key, path, cb) {
+  if (!head) return cb(new Error('not found'))
   if (head.key === key) return cb(null, head)
 
   var cmp = compare(head.path, path)
