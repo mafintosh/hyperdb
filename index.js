@@ -10,19 +10,11 @@ module.exports = DB
 
 function DB (feeds) {
   if (!(this instanceof DB)) return new DB(feeds)
-  if (feeds.length < 1) throw new Error('Must pass at least one feed')
 
   var self = this
 
-  this.cache = alru(65536)
   this.feeds = feeds
   this.ready = thunky(open)
-
-  this.readable = true
-  this.writable = false
-
-  this._feeds = []
-  this._feedsByKey = {}
   this._writer = null
 
   function open (cb) {
@@ -45,14 +37,8 @@ DB.prototype._open = function (cb) {
     if (error) return cb(error)
 
     for (var i = 0; i < self.feeds.length; i++) {
-      var wrap = new Feed(self.feeds[i])
-
-      self._feeds[i] = wrap
-      self._feedsByKey[wrap.feed.key.toString('hex')] = wrap
-
       if (self.feeds[i].writable) {
-        self._writer = wrap
-        self.writable = true
+        self._writer = self.feeds[i]
       }
     }
 
@@ -60,75 +46,192 @@ DB.prototype._open = function (cb) {
   }
 }
 
-DB.prototype._listAll = function (head, ends, path, cb) {
-  if (!head) return cb(null, [])
-
+DB.prototype.get = function (key, cb) {
   var self = this
 
-  this._list(head, path, null, function (err, entries) {
+  this.ready(function (err) {
     if (err) return cb(err)
 
-    var other = self._feedsByKey[head.feed] === self._feeds[0] ? self._feeds[1] : self._feeds[0]
-
-    other.head(function (err, otherHead) {
+    getHeads(self.feeds, function (err, heads) {
       if (err) return cb(err)
-      self._list(otherHead, path, head.heads, function (err, otherEntries) {
+
+      var i = 0
+      var nodes = []
+
+      loop(null)
+
+      function loop (err) {
         if (err) return cb(err)
+        if (i >= heads.length) return done()
+        var head = heads[i++]
 
-        if (otherEntries.length) {
-          console.log('head', head)
-          console.log('other entries', otherEntries)
-          console.log('entries', entries)
-          process.exit()
-        }
+        self._get(head, key, nodes, loop)
+      }
 
-        cb(null, entries)
-      })
+      function done () {
+        nodes = dedup(nodes, heads)
+        cb(null, nodes)
+      }
     })
   })
 }
 
-DB.prototype.get = function (key, cb) {
-  var h = hash(toBuffer(key))
-  var path = splitHash(h)
+DB.prototype._get = function (head, key, result, cb) {
+  if (!head) return cb(null)
 
-  var self = this
+  if (head.key === key) {
+    result.push(head)
+    return cb(null)
+  }
 
-  this.head(function (err, head) {
-    if (err) return cb(err)
-    self._get(head, key, path, cb)
-  })
-}
-
-DB.prototype._get = function (head, key, path, cb) {
-  if (!head) return cb(new Error('not found'))
-  if (head.key === key) return cb(null, head)
-
+  var path = toPath(key)
   var cmp = compare(head.path, path)
   var ptrs = head.pointers[cmp]
 
-  if (cmp === head.path.length - 1) {
-    console.log('special (hash collisions values)')
-    return
-  }
-
-  if (!ptrs.length) return cb(new Error('not found'))
-
+  if (!ptrs.length) return cb(null)
   var target = path[cmp]
   var self = this
 
   this._getAll(ptrs, function (err, nodes) {
     if (err) return cb(err)
 
-    for (var i = 0; i < nodes.length; i++) {
-      if (nodes[i].path[cmp] === target) return self._get(nodes[i], key, path, cb)
-    }
+    var i = 0
+    loop(null)
 
-    cb(new Error('not found'))
+    function loop (err) {
+      if (err) return cb(err)
+      if (i === nodes.length) return cb(null)
+
+      var node = nodes[i++]
+
+      if (node.path[cmp] === target) {
+        return self._get(node, key, result, loop)
+      }
+
+      process.nextTick(loop)
+    }
   })
 }
 
-DB.prototype._list = function (head, path, min, cb) {
+DB.prototype.put = function (key, val, cb) {
+  var self = this
+
+  this.ready(function (err) {
+    if (err) return cb(err)
+
+    getHeads(self.feeds, function (err, heads) {
+      if (err) return cb(err)
+      if (heads.every(isNull)) return self._init(key, val, cb)
+
+      var path = toPath(key)
+      var result = []
+      var i = 0
+      var j = 0
+      var pointers = []
+
+      heads = heads.filter(x => x)
+      loop()
+
+      function filter (result, val, i) {
+        var me = self._writer.key.toString('hex')
+
+        result = result.filter(function (r) {
+          if (r.key === key) return false
+          if (r.feed === me && r.path[i] === val) {
+            return false
+          }
+          return true
+        })
+
+        result = result.map(function (r) {
+          return {feed: r.feed, seq: r.seq}
+        })
+
+        result.push({
+          feed: me,
+          seq: self._writer.length
+        })
+
+        return result
+      }
+
+      function done () {
+        var node = {
+          feed: self._writer.key.toString('hex'),
+          seq: self._writer.length,
+          key: key,
+          pointers: pointers,
+          path: path,
+          value: val,
+          heads: self.feeds
+            .map(function (f) {
+              return f !== self._writer && {
+                feed: f.key.toString('hex'),
+                length: f.length
+              }
+            })
+            .filter(function (f) {
+              return f
+            })
+        }
+
+        self._writer.append(node, cb)
+      }
+
+      function loop (err, nodes) {
+        if (err) return cb(err)
+
+        if (nodes) {
+          pointers.push(filter(nodes, path[i], i))
+          i++
+        }
+
+        if (i === path.length) return done()
+        self._listHeads(heads, path.slice(0, i), loop)
+      }
+    })
+  })
+}
+
+DB.prototype.list = function (path, cb) {
+  var self = this
+
+  this.ready(function (err) {
+    if (err) return cb(err)
+
+    getHeads(self.feeds, function (err, heads) {
+      if (err) return cb(err)
+
+      self._listHeads(heads, path, cb)
+    })
+  })
+}
+
+DB.prototype._listHeads = function (heads, path, cb) {
+  var self = this
+  var i = 0
+  var result = []
+
+  loop(null, null)
+
+  function loop (err, nodes) {
+    if (err) return cb(err)
+
+    if (nodes) {
+      for (var j = 0; j < nodes.length; j++){
+        result.push(nodes[j])
+      }
+    }
+
+    if (i === heads.length) {
+      return cb(null, dedupKeys(result, heads))
+    }
+
+    self._list(heads[i++], path, loop)
+  }
+}
+
+DB.prototype._list = function (head, path, cb) {
   var self = this
 
   if (!head) return cb(null, [])
@@ -136,22 +239,41 @@ DB.prototype._list = function (head, path, min, cb) {
   var cmp = compare(head.path, path)
   var ptrs = head.pointers[cmp]
 
-  if (min) {
-    ptrs = ptrs.filter(function (p) {
-      var m = min[p.feed] || 0
-      return p.seq >= m
-    })
-  }
-
   if (cmp === path.length) {
     self._getAll(ptrs, cb)
     return
   }
 
-  self._closer(path, cmp, ptrs, min, cb)
+  self._closer(path, cmp, ptrs, cb)
 }
 
-DB.prototype._closer = function (path, cmp, ptrs, min, cb) {
+DB.prototype._init = function (key, val, cb) {
+  var self = this
+  var node = {
+    feed: this._writer.key.toString('hex'),
+    seq: 0,
+    key: key,
+    pointers: toPath(key).map(function (v) {
+      return [{feed: self._writer.key.toString('hex'), seq: 0}]
+    }),
+    path: toPath(key),
+    value: val,
+    heads: this.feeds
+      .map(function (f) {
+        return f !== self._writer && {
+          feed: f.key.toString('hex'),
+          length: f.length
+        }
+      })
+      .filter(function (f) {
+        return f
+      })
+  }
+
+  this._writer.append(node, cb)
+}
+
+DB.prototype._closer = function (path, cmp, ptrs, cb) {
   var target = path[cmp]
   var self = this
 
@@ -162,103 +284,12 @@ DB.prototype._closer = function (path, cmp, ptrs, min, cb) {
       var node = nodes[i]
 
       if (node.path[cmp] === target) {
-        self._list(node, path, min, cb)
+        self._list(node, path, cb)
         return
       }
     }
 
     cb(null, [])
-  })
-}
-
-DB.prototype.put = function (key, val, cb) {
-  var h = hash(toBuffer(key))
-  var path = splitHash(h)
-  var self = this
-  var end = 0
-  var pointers = []
-
-  this.head(function (err, head) {
-    if (err) return cb(err)
-
-    var ends = {}
-    for (var i = 0; i < self.feeds.length; i++) {
-      if (self.feeds[i] === self._writer.feed) continue
-      ends[self.feeds[i].key.toString('hex')] = self.feeds[i].length
-    }
-
-    loop(null, null)
-
-    function done () {
-      var node = {
-        seq: self._writer.feed.length,
-        feed: self._writer.feed.key.toString('hex'),
-        heads: ends,
-        key: key,
-        path: path,
-        value: val,
-        pointers: pointers
-      }
-
-      self._writer.append(node, cb)
-    }
-
-    function loop (err, entries) {
-      if (err) return cb(err)
-      if (end === path.length) return done()
-
-      if (entries) {
-        var offset = end++
-
-        entries = entries
-          .filter(function (entry) {
-            return entry.path[offset] !== path[offset]
-          })
-          .map(function (entry) {
-            return {feed: entry.feed, seq: entry.seq}
-          })
-
-        entries.push({feed: self._writer.feed.key.toString('hex'), seq: self._writer.feed.length})
-        pointers.push(entries)
-      }
-
-      self._listAll(head, ends, path.slice(0, end), loop)
-    }
-  })
-}
-
-DB.prototype.head = function (cb) {
-  var self = this
-
-  this.ready(function (err) {
-    if (err) return cb(err)
-
-    var heads = []
-    var i = 0
-
-    loop()
-
-    function loop () {
-      if (i === self._feeds.length) {
-        if (!heads.length) return cb(null, null)
-        if (heads.length === 1) return cb(null, heads[0])
-
-        if (heads.length > 2) throw new Error('only two supported now')
-
-        var a = heads[0]
-        var b = heads[1]
-
-        if (a.heads[b.feed] > b.seq) return cb(null, a)
-        cb(null, b)
-        return
-      }
-
-      self._feeds[i++].head(function (err, head) {
-        if (err) return cb(err)
-        if (head) heads.push(head)
-        loop()
-      })
-    }
   })
 }
 
@@ -271,7 +302,7 @@ DB.prototype._getAll = function (pointers, cb) {
   var self = this
 
   pointers.forEach(function (ptr, i) {
-    var feed = self._feedsByKey[ptr.feed]
+    var feed = find(ptr.feed)
 
     feed.get(ptr.seq, function (err, node) {
       if (err) error = err
@@ -282,69 +313,100 @@ DB.prototype._getAll = function (pointers, cb) {
       else cb(null, all)
     })
   })
+
+  function find (key) {
+    for (var i = 0; i < self.feeds.length; i++) {
+      if (self.feeds[i].key.toString('hex') === key) return self.feeds[i]
+    }
+    return null
+  }
 }
 
-DB.prototype.close = function (cb) {
-  var self = this
-  self.ready(function (err) {
-    if (err) return cb(err)
 
-    self._close(cb)
-  })
-}
-
-DB.prototype._close = function (cb) {
-  var missing = this.feeds.length
+function getHeads (feeds, cb) {
   var error = null
+  var heads = []
+  var missing = feeds.length
 
-  for (var i = 0; i < this.feeds.length; i++) {
-    this.feeds[i].close(onclose)
-  }
+  feeds.forEach(function (feed, i) {
+    head(feed, function (err, h) {
+      if (err) error = err
+      else heads[i] = h
 
-  var self = this
-
-  function onclose (err) {
-    if (err) error = err
-    if (--missing) return
-    if (error) return cb(error)
-
-    self.readable = false
-    self.writable = false
-
-    cb(null)
-  }
-}
-
-function Feed (feed) {
-  this.feed = feed
-  this.cache = alru(65536)
-}
-
-Feed.prototype.head = function (cb) {
-  var self = this
-
-  this.feed.ready(function (err) {
-    if (err) return cb(err)
-    if (!self.feed.length) return cb(null, null)
-    self.get(self.feed.length - 1, cb)
+      if (--missing) return
+      cb(error, heads)
+    })
   })
 }
 
-Feed.prototype.append = function (val, cb) {
-  this.feed.append(val, cb)
+function dedupKeys (nodes, heads) {
+  nodes.sort(function (a, b) {
+    return a.key.localeCompare(b.key)
+  })
+
+  var batch = nodes.slice(0, 1)
+  var all = []
+
+  for (var i = 1; i < nodes.length; i++) {
+    if (nodes[i - 1].key === nodes[i].key) {
+      batch.push(nodes[i])
+    } else {
+      all = all.concat(dedup(batch, heads))
+      batch = [nodes[i]]
+    }
+  }
+
+  return all.concat(dedup(batch, heads))
 }
 
-Feed.prototype.get = function (i, cb) {
-  var self = this
-
-  var cached = this.cache.get(i)
-  if (cached) return process.nextTick(cb, null, cached)
-
-  this.feed.get(i, function (err, val) {
-    if (err) return cb(err)
-    self.cache.set(i, val)
-    cb(null, val)
+function dedup (nodes, heads) {
+  nodes = nodes.filter(function (n, i) {
+    return indexOf(n) === i
   })
+
+  nodes = nodes.filter(function (n) {
+    return !nodes.some(function (o) {
+      if (o.feed === n.feed && o.seq > n.seq) return true
+      return o.heads.some(function (head) {
+        return head.feed === n.feed && head.length > n.seq
+      })
+    })
+  })
+
+  return nodes
+
+  function indexOf (n) {
+    for (var i = 0; i < nodes.length; i++) {
+      if (nodes[i].feed === n.feed && nodes[i].seq === n.seq) return i
+    }
+    return -1
+  }
+}
+
+function head (feed, cb) {
+  if (!feed.length) return cb(null, null)
+  feed.get(feed.length - 1, cb)
+}
+
+function toPath (key)  {
+  var arr = splitHash(hash(toBuffer(key)))
+  arr.push(key)
+  return arr
+
+  // var ps = key.split('')
+  // while (ps.length < 10) ps.push('0')
+  // ps.push(key)
+  // return ps
+}
+
+function isNull (v) {
+  return v === null
+}
+
+function compare (a, b) {
+  var idx = 0
+  while (idx < a.length && a[idx] === b[idx]) idx++
+  return idx
 }
 
 function hash (key) {
@@ -360,12 +422,6 @@ function splitHash (hash) {
   }
 
   return list
-}
-
-function compare (a, b) {
-  var idx = 0
-  while (idx < a.length && a[idx] === b[idx]) idx++
-  return idx
 }
 
 function factor (n, b, cnt, list) {
