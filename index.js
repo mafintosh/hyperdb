@@ -141,6 +141,16 @@ DB.prototype._get = function (head, key, result, cb) {
   })
 }
 
+DB.prototype._append = function (node, cb) {
+  if (!this._writer) return cb(new Error('No writable feed. Cannot append'))
+
+  if (this._writer.length === 0) {
+    this._writer.append([{type: 'hyperdb', version: 0}, node], cb)
+  } else {
+    this._writer.append(node, cb)
+  }
+}
+
 DB.prototype._heads = function (cb) {
   var error = null
   var heads = []
@@ -184,12 +194,13 @@ DB.prototype._put = function (key, val, cb) {
       var path = toPath(key)
       var i = 0
       var pointers = []
+      var seq = Math.max(self._writer.length, 1)
+      var me = self._writer.key.toString('hex')
 
       heads = heads.filter(x => x)
       loop()
 
       function filter (result, val, i) {
-        var me = self._writer.key.toString('hex')
 
         result = result.filter(function (r) {
           if (r.key === key) return false
@@ -205,7 +216,7 @@ DB.prototype._put = function (key, val, cb) {
 
         result.push({
           feed: me,
-          seq: self._writer.length
+          seq: seq
         })
 
         return result
@@ -213,8 +224,8 @@ DB.prototype._put = function (key, val, cb) {
 
       function done () {
         var node = {
-          feed: self._writer.key.toString('hex'),
-          seq: self._writer.length,
+          feed: me,
+          seq: seq,
           key: key,
           pointers: pointers,
           path: path,
@@ -231,7 +242,7 @@ DB.prototype._put = function (key, val, cb) {
             })
         }
 
-        self._writer.append(node, cb)
+        self._append(node, cb)
       }
 
       function loop (err, nodes) {
@@ -329,12 +340,14 @@ DB.prototype._list = function (head, path, cb) {
 
 DB.prototype._init = function (key, val, cb) {
   var self = this
+  var seq = Math.max(this._writer.length, 1)
+
   var node = {
     feed: this._writer.key.toString('hex'),
-    seq: 0,
+    seq: seq,
     key: key,
     pointers: toPath(key).map(function (v) {
-      return [{feed: self._writer.key.toString('hex'), seq: 0}]
+      return [{feed: self._writer.key.toString('hex'), seq: seq}]
     }),
     path: toPath(key),
     value: val,
@@ -350,7 +363,7 @@ DB.prototype._init = function (key, val, cb) {
       })
   }
 
-  this._writer.append(node, cb)
+  this._append(node, cb)
 }
 
 DB.prototype._closer = function (path, cmp, ptrs, cb) {
