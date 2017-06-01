@@ -1,5 +1,5 @@
 var sodium = require('sodium-universal')
-var alru = require('array-lru')
+// var alru = require('array-lru')
 var allocUnsafe = require('buffer-alloc-unsafe')
 var toBuffer = require('to-buffer')
 var thunky = require('thunky')
@@ -145,9 +145,7 @@ DB.prototype.put = function (key, val, cb) {
       if (heads.every(isNull)) return self._init(key, val, cb)
 
       var path = toPath(key)
-      var result = []
       var i = 0
-      var j = 0
       var pointers = []
 
       heads = heads.filter(x => x)
@@ -263,7 +261,7 @@ DB.prototype._listHeads = function (heads, path, cb) {
     if (err) return cb(err)
 
     if (nodes) {
-      for (var j = 0; j < nodes.length; j++){
+      for (var j = 0; j < nodes.length; j++) {
         result.push(nodes[j])
       }
     }
@@ -367,7 +365,6 @@ DB.prototype._getAll = function (pointers, cb) {
   }
 }
 
-
 function getHeads (feeds, cb) {
   var error = null
   var heads = []
@@ -433,7 +430,7 @@ function head (feed, cb) {
   feed.get(feed.length - 1, cb)
 }
 
-function toPath (key)  {
+function toPath (key) {
   var arr = splitHash(hash(toBuffer(key)))
   arr.push(key)
   return arr
