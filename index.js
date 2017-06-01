@@ -3,6 +3,8 @@ var sodium = require('sodium-universal')
 var allocUnsafe = require('buffer-alloc-unsafe')
 var toBuffer = require('to-buffer')
 var thunky = require('thunky')
+var mutexify = require('mutexify')
+var peer = require('./lib/peer')
 
 var KEY = allocUnsafe(sodium.crypto_shorthash_KEYBYTES).fill(0)
 
@@ -18,7 +20,10 @@ function DB (feeds) {
   this.writable = false
   this.readable = !!feeds.length
 
+  this._peers = []
+  this._peersByKey = {}
   this._writer = null
+  this._lock = mutexify()
 
   function open (cb) {
     self._open(cb)
@@ -57,6 +62,8 @@ DB.prototype._open = function (cb) {
     if (error) return cb(error)
 
     for (var i = 0; i < self.feeds.length; i++) {
+      self._peersByKey[self.feeds[i].key.toString('hex')] = self._peers[i] = peer(self.feeds[i])
+
       if (self.feeds[i].writable) {
         self._writer = self.feeds[i]
         self.writable = true
@@ -73,7 +80,7 @@ DB.prototype.get = function (key, cb) {
   this.ready(function (err) {
     if (err) return cb(err)
 
-    getHeads(self.feeds, function (err, heads) {
+    self._heads(function (err, heads) {
       if (err) return cb(err)
 
       var i = 0
@@ -134,13 +141,43 @@ DB.prototype._get = function (head, key, result, cb) {
   })
 }
 
+DB.prototype._heads = function (cb) {
+  var error = null
+  var heads = []
+  var missing = this._peers.length
+  var self = this
+
+  this._peers.forEach(function (peer, i) {
+    peer.head(function (err, head) {
+      if (err) error = err
+      else heads[i] = head
+
+      if (--missing) return
+      cb(error, heads)
+    })
+  })
+}
+
 DB.prototype.put = function (key, val, cb) {
+  if (!cb) cb = noop
+
+  var self = this
+
+  this._lock(function (release) {
+    self._put(key, val, function (err) {
+      if (err) return release(cb, err)
+      release(cb, null)
+    })
+  })
+}
+
+DB.prototype._put = function (key, val, cb) {
   var self = this
 
   this.ready(function (err) {
     if (err) return cb(err)
 
-    getHeads(self.feeds, function (err, heads) {
+    self._heads(function (err, heads) {
       if (err) return cb(err)
       if (heads.every(isNull)) return self._init(key, val, cb)
 
@@ -218,7 +255,7 @@ DB.prototype.list = function (path, cb) {
   this.ready(function (err) {
     if (err) return cb(err)
 
-    getHeads(self.feeds, function (err, heads) {
+    self._heads(function (err, heads) {
       if (err) return cb(err)
 
       self._listHeads(heads, path, cb)
@@ -345,38 +382,13 @@ DB.prototype._getAll = function (pointers, cb) {
   var self = this
 
   pointers.forEach(function (ptr, i) {
-    var feed = find(ptr.feed)
-
-    feed.get(ptr.seq, function (err, node) {
+    self._peersByKey[ptr.feed].get(ptr.seq, function (err, node) {
       if (err) error = err
       if (node) all[i] = node
       if (--missing) return
 
       if (error) cb(error)
       else cb(null, all)
-    })
-  })
-
-  function find (key) {
-    for (var i = 0; i < self.feeds.length; i++) {
-      if (self.feeds[i].key.toString('hex') === key) return self.feeds[i]
-    }
-    return null
-  }
-}
-
-function getHeads (feeds, cb) {
-  var error = null
-  var heads = []
-  var missing = feeds.length
-
-  feeds.forEach(function (feed, i) {
-    head(feed, function (err, h) {
-      if (err) error = err
-      else heads[i] = h
-
-      if (--missing) return
-      cb(error, heads)
     })
   })
 }
@@ -425,20 +437,10 @@ function dedup (nodes, heads) {
   }
 }
 
-function head (feed, cb) {
-  if (!feed.length) return cb(null, null)
-  feed.get(feed.length - 1, cb)
-}
-
 function toPath (key) {
   var arr = splitHash(hash(toBuffer(key)))
   arr.push(key)
   return arr
-
-  // var ps = key.split('')
-  // while (ps.length < 10) ps.push('0')
-  // ps.push(key)
-  // return ps
 }
 
 function isNull (v) {
