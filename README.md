@@ -1,16 +1,12 @@
 # hyperdb
 
-WIP - nothing to see here
+Distributed, scalable key/value store.
 
 ```
 npm install hyperdb
 ```
 
-## Usage
-
-``` js
-var hyperdb = require('hyperdb')
-```
+# WORK IN PROGRESS, NO STABLE RELEASE YET
 
 ## License
 
