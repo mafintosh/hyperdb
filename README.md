@@ -1,6 +1,6 @@
 # hyperdb
 
-Distributed, scalable key/value store.
+Distributed scalable database.
 
 ```
 npm install hyperdb
