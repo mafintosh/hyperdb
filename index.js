@@ -22,6 +22,23 @@ function DB (feeds) {
   }
 }
 
+DB.prototype.replicate = function (opts) {
+  if (!opts) opts = {}
+
+  var self = this
+
+  opts.expectedFeeds = this.feeds.length
+  opts.stream = this.feeds[0].replicate(opts)
+
+  self.feeds[0].ready(function () {
+    for (var i = 1; i < self.feeds.length; i++) {
+      self.feeds[i].replicate(opts)
+    }
+  })
+
+  return opts.stream
+}
+
 DB.prototype._open = function (cb) {
   var missing = this.feeds.length
   var error = null
