@@ -22,16 +22,16 @@ test('put/get', function (assert) {
   db.put('foo', 'bar', function (err) {
     assert.error(err)
 
-    db.get('foo', function (err, node) {
+    db.get('foo', function (err, nodes) {
       assert.error(err)
-      assert.equals(node.value, 'bar')
+      assert.equals(nodes[0].value, 'bar')
 
       assert.end()
     })
   })
 })
 
-test('put/get', function (assert) {
+test('put/get x2', function (assert) {
   var db = hyperdb([
     hypercore(ram, {valueEncoding: 'json'})
   ])
@@ -39,16 +39,16 @@ test('put/get', function (assert) {
   db.put('foo', 'bar', function (err) {
     assert.error(err)
 
-    db.get('foo', function (err, node) {
+    db.get('foo', function (err, nodes) {
       assert.error(err)
-      assert.ok(node.value, 'bar')
+      assert.ok(nodes[0].value, 'bar')
 
       db.put('foo', 'baz', function (err) {
         assert.error(err)
 
-        db.get('foo', function (err, node) {
+        db.get('foo', function (err, nodes) {
           assert.error(err)
-          assert.equals(node.value, 'baz')
+          assert.equals(nodes[0].value, 'baz')
           assert.end()
         })
       })
@@ -129,14 +129,14 @@ test('example', function (assert) {
       function (next) { // net split
         destroy1()
         destroy2()
-        next()
+        setImmediate(next)
       },
       put('/c', '1.4', db1), // write key to one side
       put('/c', '2.1', db2), // write same key to other side
       function (next) { // restart replication
         destroy1 = replicate(log1write, log1read)
         destroy2 = replicate(log2write, log2read)
-        next()
+        setImmediate(next)
       },
       get('/c', ['1.4', '2.1'], db1), // return conflicting values
       get('/c', ['1.4', '2.1'], db2), // return conflicting values on other side too

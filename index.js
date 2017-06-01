@@ -15,6 +15,9 @@ function DB (feeds) {
 
   this.feeds = feeds
   this.ready = thunky(open)
+  this.writable = false
+  this.readable = !!feeds.length
+
   this._writer = null
 
   function open (cb) {
@@ -56,6 +59,7 @@ DB.prototype._open = function (cb) {
     for (var i = 0; i < self.feeds.length; i++) {
       if (self.feeds[i].writable) {
         self._writer = self.feeds[i]
+        self.writable = true
       }
     }
 
@@ -220,6 +224,30 @@ DB.prototype.list = function (path, cb) {
       if (err) return cb(err)
 
       self._listHeads(heads, path, cb)
+    })
+  })
+}
+
+DB.prototype.close = function (cb) {
+  if (!cb) cb = noop
+
+  var self = this
+
+  this.ready(function (err) {
+    if (err) return cb(err)
+
+    self.readable = false
+    self.writable = false
+
+    var missing = self.feeds.length
+    var error = null
+
+    self.feeds.forEach(function (feed) {
+      feed.close(function (err) {
+        if (err) error = err
+        if (--missing) return
+        cb(error)
+      })
     })
   })
 }
@@ -448,3 +476,5 @@ function factor (n, b, cnt, list) {
     n -= r
   }
 }
+
+function noop () {}
