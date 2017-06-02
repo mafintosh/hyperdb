@@ -508,6 +508,7 @@ function factor (n, b, cnt, list) {
     var r = n & (b - 1)
     list.push(r)
     n -= r
+    n /= b
   }
 }
 
