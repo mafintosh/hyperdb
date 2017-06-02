@@ -10,8 +10,9 @@ var KEY = allocUnsafe(sodium.crypto_shorthash_KEYBYTES).fill(0)
 
 module.exports = DB
 
-function DB (feeds) {
-  if (!(this instanceof DB)) return new DB(feeds)
+function DB (feeds, opts) {
+  if (!(this instanceof DB)) return new DB(feeds, opts)
+  if (!opts) opts = {}
 
   var self = this
 
@@ -24,6 +25,8 @@ function DB (feeds) {
   this._peersByKey = {}
   this._writer = null
   this._lock = mutexify()
+  this._map = opts.map
+  this._reduce = opts.reduce
 
   function open (cb) {
     self._open(cb)
@@ -98,6 +101,17 @@ DB.prototype.get = function (key, cb) {
 
       function done () {
         nodes = dedup(nodes, heads)
+        if (!nodes.length) return cb(new Error('Not found'))
+
+        if (self._reduce) {
+          var node = nodes.reduce(self._reduce)
+          if (!node) return cb(new Error('Not found'))
+          return cb(null, self._map ? self._map(node) : node)
+        }
+        if (self._map) {
+          nodes = nodes.map(self._map)
+        }
+
         cb(null, nodes)
       }
     })
@@ -119,6 +133,11 @@ DB.prototype._get = function (head, key, result, cb) {
   if (!ptrs.length) return cb(null)
   var target = path[cmp]
   var self = this
+
+  ptrs = ptrs.filter(function (p) {
+    if (p.v === undefined) return true
+    return p.v === target
+  })
 
   this._getAll(ptrs, function (err, nodes) {
     if (err) return cb(err)
@@ -200,8 +219,11 @@ DB.prototype._put = function (key, val, cb) {
       heads = heads.filter(x => x)
       loop()
 
-      function filter (result, val, i) {
+      function onlyNumber (val) {
+        return typeof val === 'number' ? val : undefined
+      }
 
+      function filter (result, val, i) {
         result = result.filter(function (r) {
           if (r.key === key) return false
           if (r.feed === me && r.path[i] === val) {
@@ -211,12 +233,13 @@ DB.prototype._put = function (key, val, cb) {
         })
 
         result = result.map(function (r) {
-          return {feed: r.feed, seq: r.seq}
+          return {feed: r.feed, seq: r.seq, v: onlyNumber(r.path[i])}
         })
 
         result.push({
           feed: me,
-          seq: seq
+          seq: seq,
+          v: onlyNumber(val)
         })
 
         return result
