@@ -174,7 +174,6 @@ DB.prototype._heads = function (cb) {
   var error = null
   var heads = []
   var missing = this._peers.length
-  var self = this
 
   this._peers.forEach(function (peer, i) {
     peer.head(function (err, head) {
