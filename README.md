@@ -3,7 +3,7 @@
 Distributed scalable database.
 
 ```
-npm install hyperdb
+npm install mafintosh/hyperdb
 ```
 
 # WORK IN PROGRESS, NO STABLE RELEASE YET
