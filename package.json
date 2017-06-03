@@ -8,6 +8,7 @@
     "buffer-alloc-unsafe": "^1.0.0",
     "mutexify": "^1.1.0",
     "sodium-universal": "^1.0.0",
+    "thunky": "^1.0.2",
     "to-buffer": "^1.1.0"
   },
   "devDependencies": {
