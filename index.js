@@ -20,6 +20,8 @@ function DB (feeds, opts) {
   this.ready = thunky(open)
   this.writable = false
   this.readable = !!feeds.length
+  this.key = null
+  this.discoveryKey = null
 
   this._peers = []
   this._peersByKey = {}
@@ -29,6 +31,11 @@ function DB (feeds, opts) {
   this._reduce = opts.reduce
 
   feeds[0].on('peer-add', onpeer)
+  feeds[0].ready(function (err) {
+    if (err) throw err // yolo
+    self.key = feeds[0].key
+    self.discoveryKey = feeds[0].discoveryKey
+  })
 
   function onpeer () {
     var peer = feeds[0].peers[feeds[0].peers.length - 1] // hack
@@ -51,7 +58,7 @@ DB.prototype._onpeer = function (peer) {
     if (message.type === 'get') {
       self.nodes(message.key, function (err, nodes) {
         if (err) return
-        peer.stream.extension('hyperdb', new Buffer(JSON.stringify({type: 'nodes', nodes: nodes})))
+        peer.stream.extension('hyperdb', toBuffer(JSON.stringify({type: 'nodes', nodes: nodes})))
       })
       return
     }
@@ -63,7 +70,7 @@ DB.prototype._onpeer = function (peer) {
         var feed = self._peersByKey[nodes[i].feed].feed
         if (!feed.has(nodes[i].seq)) feed.get(nodes[i].seq, noop)
       }
-      return
+      // return
     }
   })
 }
@@ -156,7 +163,7 @@ DB.prototype.get = function (key, cb) {
     if (err) return cb(err)
 
     for (var i = 0; i < self.feeds[0].peers.length; i++) {
-      self.feeds[0].peers[i].stream.extension('hyperdb', new Buffer(JSON.stringify({type: 'get', key: key})))
+      self.feeds[0].peers[i].stream.extension('hyperdb', toBuffer(JSON.stringify({type: 'get', key: key})))
     }
 
     self._heads(function (err, heads) {
