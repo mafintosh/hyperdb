@@ -1,5 +1,5 @@
 var sodium = require('sodium-universal')
-// var alru = require('array-lru')
+var protocol = require('hypercore-protocol')
 var allocUnsafe = require('buffer-alloc-unsafe')
 var toBuffer = require('to-buffer')
 var thunky = require('thunky')
@@ -28,26 +28,63 @@ function DB (feeds, opts) {
   this._map = opts.map
   this._reduce = opts.reduce
 
+  feeds[0].on('peer-add', onpeer)
+
+  function onpeer () {
+    var peer = feeds[0].peers[feeds[0].peers.length - 1] // hack
+    self._onpeer(peer)
+  }
+
   function open (cb) {
     self._open(cb)
   }
+}
+
+DB.prototype._onpeer = function (peer) {
+  var self = this
+
+  peer.stream.on('extension', function (type, message) {
+    if (type !== 'hyperdb') return
+
+    message = JSON.parse(message)
+
+    if (message.type === 'get') {
+      self.nodes(message.key, function (err, nodes) {
+        if (err) return
+        peer.stream.extension('hyperdb', new Buffer(JSON.stringify({type: 'nodes', nodes: nodes})))
+      })
+      return
+    }
+
+    if (message.type === 'nodes') {
+      var nodes = message.nodes
+
+      for (var i = 0; i < nodes.length; i++) {
+        var feed = self._peersByKey[nodes[i].feed].feed
+        if (!feed.has(nodes[i].seq)) feed.get(nodes[i].seq, noop)
+      }
+      return
+    }
+  })
 }
 
 DB.prototype.replicate = function (opts) {
   if (!opts) opts = {}
 
   var self = this
-
-  opts.expectedFeeds = this.feeds.length
-  opts.stream = this.feeds[0].replicate(opts)
+  var stream = protocol({
+    id: this.feeds[0].id,
+    extensions: ['hyperdb'],
+    expectedFeeds: this.feeds.length
+  })
 
   self.feeds[0].ready(function () {
-    for (var i = 1; i < self.feeds.length; i++) {
-      self.feeds[i].replicate(opts)
+    for (var i = 0; i < self.feeds.length; i++) {
+      self.feeds[i].replicate({stream: stream})
     }
   })
 
-  return opts.stream
+  return stream
 }
 
 DB.prototype._open = function (cb) {
@@ -77,11 +114,50 @@ DB.prototype._open = function (cb) {
   }
 }
 
+DB.prototype.nodes = function (key, cb) {
+  var self = this
+
+  this.ready(function (err) {
+    if (err) return cb(err)
+
+    self._heads(function (err, heads) {
+      if (err) return cb(err)
+
+      var i = 0
+      var nodes = []
+
+      var record = heads
+        .map(function (head) {
+          return head && {feed: head.feed, seq: head.seq}
+        })
+        .filter(x => x)
+
+      loop(null)
+
+      function loop (err) {
+        if (err) return cb(err)
+        if (i >= heads.length) return done()
+        var head = heads[i++]
+
+        self._get(head, key, nodes, record, loop)
+      }
+
+      function done () {
+        cb(null, record)
+      }
+    })
+  })
+}
+
 DB.prototype.get = function (key, cb) {
   var self = this
 
   this.ready(function (err) {
     if (err) return cb(err)
+
+    for (var i = 0; i < self.feeds[0].peers.length; i++) {
+      self.feeds[0].peers[i].stream.extension('hyperdb', new Buffer(JSON.stringify({type: 'get', key: key})))
+    }
 
     self._heads(function (err, heads) {
       if (err) return cb(err)
@@ -96,7 +172,7 @@ DB.prototype.get = function (key, cb) {
         if (i >= heads.length) return done()
         var head = heads[i++]
 
-        self._get(head, key, nodes, loop)
+        self._get(head, key, nodes, null, loop)
       }
 
       function done () {
@@ -118,7 +194,7 @@ DB.prototype.get = function (key, cb) {
   })
 }
 
-DB.prototype._get = function (head, key, result, cb) {
+DB.prototype._get = function (head, key, result, record, cb) {
   if (!head) return cb(null)
 
   if (head.key === key) {
@@ -139,6 +215,12 @@ DB.prototype._get = function (head, key, result, cb) {
     return p.v === target
   })
 
+  if (record) {
+    for (var i = 0; i < ptrs.length; i++) {
+      record.push({feed: ptrs[i].feed, seq: ptrs[i].seq})
+    }
+  }
+
   this._getAll(ptrs, function (err, nodes) {
     if (err) return cb(err)
 
@@ -152,7 +234,7 @@ DB.prototype._get = function (head, key, result, cb) {
       var node = nodes[i++]
 
       if (node.path[cmp] === target) {
-        return self._get(node, key, result, loop)
+        return self._get(node, key, result, record, loop)
       }
 
       process.nextTick(loop)

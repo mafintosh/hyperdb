@@ -6,6 +6,7 @@
   "dependencies": {
     "array-lru": "^1.1.1",
     "buffer-alloc-unsafe": "^1.0.0",
+    "hypercore-protocol": "^6.4.0",
     "mutexify": "^1.1.0",
     "sodium-universal": "^1.0.0",
     "thunky": "^1.0.2",
