@@ -141,8 +141,6 @@ HyperDB.prototype._put = function (heads, key, value, cb) {
   var me = 0
   var seq = self.local.feed.length
   var pointers = []
-  // console.log('_put', key, hash(key))
-  // console.log(heads)
 
   loop(null, null)
 
@@ -162,13 +160,15 @@ HyperDB.prototype._put = function (heads, key, value, cb) {
 
     for (var j = 0; j < nodes.length; j++) {
       var node = nodes[j]
+      var nodeHash = getHash(node)
+
       if (node.key === key) continue
-      if (node.feed === me && getHash(node)[i] === target) continue
+      if (i < nodeHash.length - 1 && node.feed === me && nodeHash[i] === target) continue
 
       result.push({
         feed: node.feed,
         seq: node.seq,
-        target: getHash(node)[i]
+        target: nodeHash[i]
       })
     }
 
@@ -182,12 +182,14 @@ HyperDB.prototype._put = function (heads, key, value, cb) {
   }
 
   function loop (err, nodes) {
-    if (i === keyHash.length) return done()
+    if (err) return cb(err)
 
     if (nodes) {
       pointers.push(filter(nodes, keyHash[i], i))
       i++
     }
+
+    if (i === keyHash.length) return done()
 
     list(heads, keyHash.slice(0, i), loop)
   }
@@ -230,7 +232,7 @@ HyperDB.prototype._get = function (heads, key, cb) {
   var self = this
   var result = []
 
-  get(heads[0], key, keyHash, result, function (err) {
+  get(heads[0], key, keyHash, result, false, function (err) {
     if (err) return cb(err)
 
     // TODO: do this iteratively instead
@@ -240,13 +242,20 @@ HyperDB.prototype._get = function (heads, key, cb) {
     cb(null, result)
   })
 
-  function get (head, key, hash, result, cb) {
+  function get (head, key, hash, result, collision, cb) {
     if (head.key === key.join('/')) {
       result.push(head)
       return cb(null)
     }
+    if (collision) return cb(null)
 
     var cmp = compare(hash, getHash(head))
+
+    if (cmp === hash.length) {
+      collision = true
+      cmp-- // collision
+    }
+
     var ptrs = head.pointers[cmp]
     var relevant = []
     var target = keyHash[cmp]
@@ -254,7 +263,7 @@ HyperDB.prototype._get = function (heads, key, cb) {
     for (var i = 0; i < ptrs.length; i++) {
       var p = ptrs[i]
       // 3 --> our MAX hash value (2 bits)
-      if (p.target === target || p.target > 3) relevant.push(p)
+      if (p.target === target || p.target > 3 || collision) relevant.push(p)
     }
 
     self._getAll(relevant, function (err, nodes) {
@@ -268,7 +277,7 @@ HyperDB.prototype._get = function (heads, key, cb) {
 
         var node = nodes[i++]
 
-        if (getHash(node)[cmp] === target) get(node, key, hash, result, loop)
+        if (getHash(node)[cmp] === target) get(node, key, hash, result, collision, loop)
         else process.nextTick(loop)
       }
 
@@ -379,6 +388,8 @@ HyperDB.prototype._heads = function (cb) {
   var missing = this.peers.length
   var error = null
   var set = 0
+
+  if (!missing) return cb(null, heads, set)
 
   this.peers.forEach(function (peer, i) {
     peer.head(function (err, head) {
