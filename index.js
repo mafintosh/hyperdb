@@ -26,6 +26,8 @@ function HyperDB (storage, key, opts) {
   var self = this
 
   this._lock = mutexify()
+  this._map = opts.map
+  this._reduce = opts.reduce
 
   this.setMaxListeners(0) // can be removed once our dynamic 'add-feed' thing is removed
   this.storage = typeof storage === 'string' ? fileStorage : storage
@@ -195,6 +197,23 @@ HyperDB.prototype._put = function (heads, key, value, cb) {
   }
 }
 
+HyperDB.prototype._init = function (key, value, cb) {
+  var pointers = []
+  var h = hash(key)
+  for (var i = 0; i < h.length; i++) {
+    pointers.push([{feed: 0, seq: 1, target: h[i]}])
+  }
+
+  var node = {
+    heads: [],
+    pointers: pointers,
+    key: key.join('/'),
+    value: value
+  }
+
+  this.local.append(node, cb)
+}
+
 HyperDB.prototype.get = function (key, cb) {
   var parts = split(key)
   var self = this
@@ -209,13 +228,22 @@ HyperDB.prototype.get = function (key, cb) {
 HyperDB.prototype._get = function (heads, key, cb) {
   var keyHash = hash(key)
   var self = this
+  var result = []
 
-  get(heads[0], key, keyHash, [], cb)
+  get(heads[0], key, keyHash, result, function (err) {
+    if (err) return cb(err)
+
+    // TODO: do this iteratively instead
+    if (self._map) result = result.map(self._map)
+    if (self._reduce) result = result.length ? result.reduce(self._reduce) : null
+
+    cb(null, result)
+  })
 
   function get (head, key, hash, result, cb) {
     if (head.key === key.join('/')) {
       result.push(head)
-      return cb(null, result)
+      return cb(null)
     }
 
     var cmp = compare(hash, getHash(head))
@@ -236,7 +264,7 @@ HyperDB.prototype._get = function (heads, key, cb) {
 
       function loop (err) {
         if (err) return cb(err)
-        if (i === nodes.length) return cb(null, result)
+        if (i === nodes.length) return cb(null)
 
         var node = nodes[i++]
 
@@ -248,21 +276,47 @@ HyperDB.prototype._get = function (heads, key, cb) {
   }
 }
 
-HyperDB.prototype._init = function (key, value, cb) {
-  var pointers = []
-  var h = hash(key)
-  for (var i = 0; i < h.length; i++) {
-    pointers.push([{feed: 0, seq: 1, target: h[i]}])
-  }
+HyperDB.prototype.iterator = function (prefix, onnode, cb) {
+  var self = this
+  var stack = []
 
-  var node = {
-    heads: [],
-    pointers: pointers,
-    key: key.join('/'),
-    value: value
-  }
+  self._heads(function (err, heads) {
+    if (err) return cb(err)
 
-  this.local.append(node, cb)
+    visit(heads[0], prefix, cb)
+
+    function visit (head, prefix, cb) {
+      self._list(head, prefix, function (err, list) {
+        if (err) return cb(err)
+
+        var i = 0
+        loop(null)
+
+        function loop (err) {
+          if (err) return cb(err)
+
+          if (i === list.length) return cb(null)
+          var node = list[i++]
+
+          if (prefix.length === getHash(node).length - 1) {
+            onnode(node)
+            return process.nextTick(cb, null)
+          }
+
+          visit(head, getHash(node).slice(0, prefix.length + 1), loop)
+        }
+      })
+    }
+  })
+
+
+  // heads()
+
+  // return function (cb) {
+  //   heads(function (err, heads) {
+  //     if (err) return cb(err)
+  //   })
+  // }
 }
 
 HyperDB.prototype._closer = function (prefix, cmp, ptrs, cb) {

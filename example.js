@@ -1,18 +1,32 @@
 var hyperdb = require('./')
 var ram = require('random-access-memory')
 
-var db = hyperdb(ram)
+var db = hyperdb(ram, {
+  map: a => a.value.toString(),
+  reduce: (a, b) => a
+})
 
-for (var i = 0; i < 4000; i++) {
-  db.put('i-' + i, 'i-' + i)
+for (var i = 0; i < 40; i++) {
+  db.put('foo/i-' + i, 'i-' + i)
 }
 
-db.put('hello', 'world', function () {
-  db.put('hej', 'verden', function () {
-    db.put('hi', 'verden', function () {
-      db.get('i-24', function (err, nodes) {
+var map = {}
+
+db.put('hi/hello', 'world', function () {
+  db.put('hi/hej', 'verden', function () {
+    db.put('hi/hi', 'verden', function () {
+      db.get('hi/hello', function (err, val) {
         if (err) throw err
-        console.log(nodes[0])
+
+        var prefix = require('./lib/hash')(['hi'])
+        var ite = db.iterator(prefix, function (node) {
+          console.log('visiting', node.key)
+          // if (map[node.key]) throw new Error('dup ' + node.key)
+          // map[node.key] = true
+        }, function () {
+          console.log('(done)')
+        })
+        // ite(console.log)
       })
     })
   })
