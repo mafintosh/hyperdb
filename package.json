@@ -1,0 +1,42 @@
+{
+  "name": "hyperdb",
+  "version": "0.0.0",
+  "description": "Distributed scalable database",
+  "main": "index.js",
+  "dependencies": {
+    "array-lru": "^1.1.1",
+    "buffer-alloc": "^1.1.0",
+    "buffer-alloc-unsafe": "^1.0.0",
+    "hypercore": "^6.6.0",
+    "hypercore-protocol": "^6.4.0",
+    "inherits": "^2.0.3",
+    "mutexify": "^1.1.0",
+    "protocol-buffers": "^3.2.1",
+    "random-access-file": "^1.8.1",
+    "sodium-native": "^1.10.1",
+    "thunky": "^1.0.2",
+    "to-buffer": "^1.1.0"
+  },
+  "devDependencies": {
+    "standard": "^10.0.2"
+  },
+  "scripts": {
+    "test": "standard"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/mafintosh/hyperdb.git"
+  },
+  "keywords": [
+    "distributed",
+    "scalable",
+    "database",
+    "p2p"
+  ],
+  "author": "Mathias Buus (@mafintosh)",
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/mafintosh/hyperdb/issues"
+  },
+  "homepage": "https://github.com/mafintosh/hyperdb#readme"
+}
