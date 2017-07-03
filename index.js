@@ -285,8 +285,8 @@ HyperDB.prototype._get = function (heads, key, cb) {
   }
 }
 
-HyperDB.prototype.iterator = function (prefix) {
-  return new Iterator(this, hash(split(prefix)), null)
+HyperDB.prototype.iterator = function (prefix, opts) {
+  return new Iterator(this, hash(split(prefix)), null, opts)
 }
 
 HyperDB.prototype._closer = function (prefix, cmp, ptrs, cb) {
@@ -316,6 +316,8 @@ HyperDB.prototype._list = function (head, prefix, cb) {
   var headHash = getHash(head)
 
   var cmp = compare(prefix, headHash)
+  if (cmp >= head.pointers.length) return cb(null, [])
+
   var ptrs = head.pointers[cmp]
 
   if (cmp === prefix.length) {
@@ -330,7 +332,7 @@ HyperDB.prototype._getAll = function (pointers, cb) {
   var missing = pointers.length
   var self = this
   var error = null
-  var result = new Array(pointers.length)
+  var result = new Array(missing)
 
   if (!missing) return cb(null, result)
 
@@ -394,11 +396,12 @@ function split (key) {
   return list
 }
 
-function Iterator (db, prefix, heads) {
+function Iterator (db, prefix, heads, opts) {
   this._queued = []
   this._pending = [prefix]
   this._heads = heads
   this._db = db
+  this._maxLength = (opts && opts.recursive === false) ? prefix.length + 32 : -1
 }
 
 Iterator.prototype.next = function (cb) {
@@ -416,8 +419,9 @@ Iterator.prototype.next = function (cb) {
 
     for (var i = 0; i < nodes.length; i++) {
       var node = nodes[i]
+      var max = (self._maxLength > 0 ? self._maxLength : getHash(node).length) - 1
 
-      if (next.length === getHash(node).length - 1) {
+      if (next.length === max) {
         self._queued.push(node)
         continue
       }
