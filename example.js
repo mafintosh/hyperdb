@@ -19,15 +19,14 @@ db.put('hi/ho', 'ha', function () {
         db.get('hi/hello', function (err, val) {
           if (err) throw err
 
-          var prefix = require('./lib/hash')(['hi'])
-          var ite = db.iterator(prefix, function (node) {
-            console.log('visiting', node.key)
-            // if (map[node.key]) throw new Error('dup ' + node.key)
-            // map[node.key] = true
-          }, function () {
-            console.log('(done)')
+          var ite = db.iterator('hi')
+
+          ite.next(function loop (err, node) {
+            if (err) throw err
+            if (!node) return console.log('(end)')
+            console.log(node.key)
+            ite.next(loop)
           })
-          // ite(console.log)
         })
       })
     })

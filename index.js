@@ -285,47 +285,8 @@ HyperDB.prototype._get = function (heads, key, cb) {
   }
 }
 
-HyperDB.prototype.iterator = function (prefix, onnode, cb) {
-  var self = this
-  var stack = []
-
-  self._heads(function (err, heads) {
-    if (err) return cb(err)
-
-    visit(heads[0], prefix, cb)
-
-    function visit (head, prefix, cb) {
-      self._list(head, prefix, function (err, list) {
-        if (err) return cb(err)
-
-        var i = 0
-        loop(null)
-
-        function loop (err) {
-          if (err) return cb(err)
-
-          if (i === list.length) return cb(null)
-          var node = list[i++]
-
-          if (prefix.length === getHash(node).length - 1) {
-            onnode(node)
-            return process.nextTick(cb, null)
-          }
-
-          visit(head, getHash(node).slice(0, prefix.length + 1), loop)
-        }
-      })
-    }
-  })
-
-
-  // heads()
-
-  // return function (cb) {
-  //   heads(function (err, heads) {
-  //     if (err) return cb(err)
-  //   })
-  // }
+HyperDB.prototype.iterator = function (prefix) {
+  return new Iterator(this, hash(split(prefix)), null)
 }
 
 HyperDB.prototype._closer = function (prefix, cmp, ptrs, cb) {
@@ -431,4 +392,49 @@ function split (key) {
   if (list[0] === '') list.shift()
   if (list[list.length - 1] === '') list.pop()
   return list
+}
+
+function Iterator (db, prefix, heads) {
+  this._queued = []
+  this._pending = [prefix]
+  this._heads = heads
+  this._db = db
+}
+
+Iterator.prototype.next = function (cb) {
+  // TODO: get rid of shift, slow
+
+  if (!this._heads) return this._init(cb)
+  if (this._queued.length) return cb(null, this._queued.shift())
+  if (!this._pending.length) return cb(null, null)
+
+  var self = this
+  var next = this._pending.shift()
+
+  this._db._list(this._heads[0], next, function (err, nodes) {
+    if (err) return cb(err)
+
+    for (var i = 0; i < nodes.length; i++) {
+      var node = nodes[i]
+
+      if (next.length === getHash(node).length - 1) {
+        self._queued.push(node)
+        continue
+      }
+
+      self._pending.push(getHash(node).slice(0, next.length + 1))
+    }
+
+    self.next(cb)
+  })
+}
+
+Iterator.prototype._init = function (cb) {
+  var self = this
+
+  this._db._heads(function (err, heads) {
+    if (err) return cb(err)
+    if (!self._heads) self._heads = heads
+    self.next(cb)
+  })
 }
