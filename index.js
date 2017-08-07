@@ -341,7 +341,7 @@ DB.prototype._visitGet = function (key, path, i, node, heads, result, cb) {
 
   function onpush (err, val) {
     if (err) error = err
-    else push(key, val, result)
+    else pushMaybe(key, val, result)
     if (!--missing) cb(error)
   }
 }
