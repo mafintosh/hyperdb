@@ -1,7 +1,7 @@
 var replicate = require('./helpers/replicate')
 var tape = require('tape')
 
-var hyperdb = require('hyperdb')
+var hyperdb = require('..')
 var hypercore = require('hypercore')
 var ram = require('random-access-memory')
 
