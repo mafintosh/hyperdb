@@ -95,7 +95,6 @@ tape('2 peers, fork and non-merge write', function (t) {
       b.get('/key', ongetkey)
 
       function ongetroot (err, nodes) {
-        // console.log('-->', nodes)
         t.error(err, 'no error')
         t.same(nodes.length, 1)
         t.same(nodes[0].key, '/root')
@@ -115,15 +114,15 @@ tape('2 peers, fork and non-merge write', function (t) {
   })
 })
 
-tape.skip('2 peers, 1 reference old value', function (t) {
-  t.plan(16)
+tape('2 peers, 1 reference old value', function (t) {
+  t.plan(24)
 
   createTwo(function (a, b) {
     a.put('/a', 'old', function () {
       replicate(a, b, function () {
         a.put('/a', 'new', function () {
-          a.put('/foo', 'meh', function () {
-            b.put('/other', 'meh', function () {
+          a.put('/foo', 'foo', function () {
+            b.put('/other', 'other', function () {
               replicate(a, b, validate)
             })
           })
@@ -132,9 +131,33 @@ tape.skip('2 peers, 1 reference old value', function (t) {
     })
 
     function validate () {
-      a.get('/a', function (err, nodes) {
-        console.log(nodes)
-      })
+      a.get('/a', ona)
+      a.get('/foo', onfoo)
+      a.get('/other', onother)
+      b.get('/a', ona)
+      b.get('/foo', onfoo)
+      b.get('/other', onother)
+
+      function ona (err, nodes) {
+        t.error(err, 'no error')
+        t.same(nodes.length, 1)
+        t.same(nodes[0].key, '/a')
+        t.same(nodes[0].value, 'new')
+      }
+
+      function onfoo (err, nodes) {
+        t.error(err, 'no error')
+        t.same(nodes.length, 1)
+        t.same(nodes[0].key, '/foo')
+        t.same(nodes[0].value, 'foo')
+      }
+
+      function onother (err, nodes) {
+        t.error(err, 'no error')
+        t.same(nodes.length, 1)
+        t.same(nodes[0].key, '/other')
+        t.same(nodes[0].value, 'other')
+      }
     }
   })
 })

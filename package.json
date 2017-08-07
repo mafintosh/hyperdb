@@ -10,7 +10,8 @@
     "random-access-memory": "^2.4.0",
     "sodium-native": "^1.10.3",
     "sodium-universal": "^1.4.0",
-    "to-buffer": "^1.1.0"
+    "to-buffer": "^1.1.0",
+    "unordered-array-remove": "^1.0.2"
   },
   "devDependencies": {
     "tape": "^4.8.0"

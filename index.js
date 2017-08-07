@@ -1,6 +1,7 @@
 var hash = require('./hash')
 var writer = require('./writer')
 var hypercore = require('hypercore')
+var remove = require('unordered-array-remove')
 var ram = require('random-access-memory')
 var protocol = null // lazy load on replicate
 
@@ -145,14 +146,12 @@ DB.prototype.put = function (key, value, cb) {
       return
     }
 
-    var visited = []
     var trie = []
-
     var missing = h.length
     var error = null
 
     for (var i = 0; i < h.length; i++) {
-      self._visitPut(key, path, 0, h[i], visited, trie, onput)
+      self._visitPut(key, path, 0, h[i], h, trie, onput)
     }
 
     function onput (err) {
@@ -177,7 +176,6 @@ DB.prototype.put = function (key, value, cb) {
 DB.prototype.get = function (key, cb) {
   var path = this._hash(key).concat(END_OF_PATH)
   var result = []
-  var visited = []
   var self = this
 
   this._heads(function (err, h) {
@@ -188,7 +186,7 @@ DB.prototype.get = function (key, cb) {
     var error = null
 
     for (var i = 0; i < h.length; i++) {
-      self._visitGet(key, path, 0, h[i], visited, result, onget)
+      self._visitGet(key, path, 0, h[i], h, result, onget)
     }
 
     function onget (err) {
@@ -206,10 +204,9 @@ DB.prototype.get = function (key, cb) {
   })
 }
 
-DB.prototype._visitPut = function (key, path, i, node, visited, trie, cb) {
+DB.prototype._visitPut = function (key, path, i, node, heads, trie, cb) {
   var writers = this.writers
 
-  if (marked(visited, node)) return cb(null)
   loop(i, 0, 0, cb)
 
   function loop (i, j, k, cb) {
@@ -258,8 +255,8 @@ DB.prototype._visitPut = function (key, path, i, node, visited, trie, cb) {
         if (remoteVals.length === 1) {
           writers[remoteVals[0].log].get(remoteVals[0].seq, function (err, val) {
             if (err) return cb(err)
+            if (!updateHead(val, node, heads)) return cb(null)
             node = val
-            if (marked(visited, node)) return cb(null)
             loop(i + 1, j, k, cb)
           })
           return
@@ -274,7 +271,8 @@ DB.prototype._visitPut = function (key, path, i, node, visited, trie, cb) {
 
         function onremoteval (err, val) {
           if (err) return onvisit(err)
-          self._visitPut(key, path, i + 1, val, visited, trie, onvisit)
+          if (!updateHead(val, node, heads)) return onvisit(null)
+          self._visitPut(key, path, i + 1, val, heads, trie, onvisit)
         }
 
         function onvisit (err) {
@@ -289,11 +287,9 @@ DB.prototype._visitPut = function (key, path, i, node, visited, trie, cb) {
   }
 }
 
-DB.prototype._visitGet = function (key, path, i, node, visited, result, cb) {
+DB.prototype._visitGet = function (key, path, i, node, heads, result, cb) {
   var self = this
   var writers = this.writers
-
-  if (marked(visited, node)) return cb(null)
 
   for (; i < path.length; i++) {
     if (node.path[i] === path[i]) continue
@@ -314,9 +310,10 @@ DB.prototype._visitGet = function (key, path, i, node, visited, result, cb) {
       writers[vals[j].log].get(vals[j].seq, onval)
     }
 
-    function onval (err, node) {
-      if (err) return cb(err)
-      self._visitGet(key, path, i + 1, node, visited, result, done)
+    function onval (err, val) {
+      if (err) return done(err)
+      if (!updateHead(val, node, heads)) return done(null)
+      self._visitGet(key, path, i + 1, val, heads, result, done)
     }
 
     function done (err) {
@@ -351,11 +348,21 @@ DB.prototype._visitGet = function (key, path, i, node, visited, result, cb) {
 
 function noop () {}
 
-function marked (visited, node) {
-  if (visited[node.log] <= node.seq) return true
-  visited[node.log] = node.seq
+function updateHead (newNode, oldNode, heads) {
+  var i = heads.indexOf(oldNode)
+  if (i !== -1) remove(heads, i)
+  if (!isHead(newNode, heads)) return false
+  heads.push(newNode)
+  return true
+}
 
-  return false
+function isHead (node, heads) {
+  for (var i = 0; i < heads.length; i++) {
+    var head = heads[i]
+    if (head.log === node.log) return false
+    if (node.seq < head.heads[node.log]) return false
+  }
+  return true
 }
 
 function pushMaybe (key, node, results) {
