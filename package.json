@@ -4,7 +4,11 @@
   "description": "",
   "main": "index.js",
   "dependencies": {
-    "from2": "^2.3.0",
+    "array-lru": "^1.1.1",
+    "hypercore": "^6.7.0",
+    "hypercore-protocol": "^6.4.0",
+    "random-access-memory": "^2.4.0",
+    "sodium-native": "^1.10.3",
     "sodium-universal": "^1.4.0",
     "to-buffer": "^1.1.0"
   },
