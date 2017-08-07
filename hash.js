@@ -1,4 +1,4 @@
-var sodium = require('sodium-native')
+var sodium = require('sodium-universal')
 var toBuffer = require('to-buffer')
 
 var KEY = Buffer.alloc(16)
