@@ -5,7 +5,6 @@
   "main": "index.js",
   "dependencies": {
     "array-lru": "^1.1.1",
-    "from2": "^2.3.0",
     "hypercore": "^6.7.0",
     "hypercore-protocol": "^6.4.0",
     "random-access-memory": "^2.4.0",
