@@ -1,4 +1,3 @@
-var create = require('./helpers/create')
 var replicate = require('./helpers/replicate')
 var tape = require('tape')
 
@@ -210,7 +209,6 @@ function sort (a, b) {
 function createTwo (cb) {
   var a = hypercore(ram, {valueEncoding: 'json'})
   var b = hypercore(ram, {valueEncoding: 'json'})
-  var dbs = {}
 
   a.ready(function () {
     b.ready(function () {

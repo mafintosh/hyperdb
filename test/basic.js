@@ -97,7 +97,7 @@ tape('put/gets namespaces', function (t) {
 tape('put in tree', function (t) {
   t.plan(8)
 
-  var db  = create.one()
+  var db = create.one()
 
   db.put('/hello', 'a', function (err) {
     t.error(err, 'no error')
@@ -120,7 +120,7 @@ tape('put in tree', function (t) {
 tape('put in tree reverse order', function (t) {
   t.plan(8)
 
-  var db  = create.one()
+  var db = create.one()
 
   db.put('/hello/world', 'b', function (err) {
     t.error(err, 'no error')
@@ -143,7 +143,7 @@ tape('put in tree reverse order', function (t) {
 tape('multiple put in tree', function (t) {
   t.plan(13)
 
-  var db  = create.one()
+  var db = create.one()
 
   db.put('/hello/world', 'b', function (err) {
     t.error(err, 'no error')

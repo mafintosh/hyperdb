@@ -13,8 +13,6 @@ function DB (opts) {
   if (!(this instanceof DB)) return new DB(opts)
   if (!opts) opts = {}
 
-  var self = this
-
   // TODO: automatically determine local id in writer.js
   this.id = opts.id || 0
   this.writers = []
@@ -129,7 +127,9 @@ DB.prototype.put = function (key, value, cb) {
     if (err) return cb(err)
 
     var newHeads = []
-    for (var i = 0; i < self.writers.length; i++) {
+    var i = 0
+
+    for (i = 0; i < self.writers.length; i++) {
       newHeads.push(i === log ? 0 : self.writers[i].feed.length)
     }
 
@@ -150,8 +150,8 @@ DB.prototype.put = function (key, value, cb) {
     var missing = h.length
     var error = null
 
-    for (var i = 0; i < h.length; i++) {
-      self._visitPut(key, path, 0, h[i], h, trie, onput)
+    for (i = 0; i < h.length; i++) {
+      self._visitPut(key, path, 0, 0, 0, h[i], h, trie, onput)
     }
 
     function onput (err) {
@@ -204,144 +204,140 @@ DB.prototype.get = function (key, cb) {
   })
 }
 
-DB.prototype._visitPut = function (key, path, i, node, heads, trie, cb) {
+DB.prototype._visitPut = function (key, path, i, j, k, node, heads, trie, cb) {
   var writers = this.writers
+  var self = this
+  var missing = 0
+  var error = null
+  var vals = null
+  var remoteVals = null
 
-  loop(i, 0, 0, cb)
+  for (; i < path.length; i++) {
+    var val = path[i]
+    var local = trie[i]
+    var remote = node.trie[i] || []
 
-  function loop (i, j, k, cb) {
-    for (; i < path.length; i++) {
-      var val = path[i]
-      var local = trie[i]
-      var remote = node.trie[i] || []
+    // copy old trie
+    for (; j < remote.length; j++) {
+      if (j === val && val !== END_OF_PATH) continue
 
-      // copy old trie
-      for (; j < remote.length; j++) {
-        if (j === val && val !== END_OF_PATH) continue
+      if (!local) local = trie[i] = []
+      vals = local[j] = local[j] || []
+      remoteVals = remote[j] || []
 
-        if (!local) local = trie[i] = []
-        var vals = local[j] = local[j] || []
-        var remoteVals = remote[j] || []
+      for (; k < remoteVals.length; k++) {
+        var rval = remoteVals[k]
 
-        for (; k < remoteVals.length; k++) {
-          var rval = remoteVals[k]
-
-          if (val === END_OF_PATH) {
-            // TODO: used to be node.key which is prob a bug
-            writers[rval.log].get(rval.seq, function (err, val) {
-              if (err) return cb(err)
-              if (val.key !== key && noDup(vals, rval)) vals.push(rval)
-              loop(i, j, k + 1, cb)
-            })
-            return
-          }
-
-          if (noDup(vals, rval)) vals.push(rval)
-        }
-        k = 0
-      }
-      j = 0
-
-      if (node.path[i] !== val || (node.path[i] === END_OF_PATH && node.key !== key)) {
-        // trie is splitting
-        if (!local) local = trie[i] = []
-        var vals = local[node.path[i]] = local[node.path[i]] || []
-        var remoteVals = remote[val]
-
-        vals.push({log: node.log, seq: node.seq})
-
-        if (!remoteVals || !remoteVals.length) return cb(null)
-
-        if (remoteVals.length === 1) {
-          writers[remoteVals[0].log].get(remoteVals[0].seq, function (err, val) {
-            if (err) return cb(err)
-            if (!updateHead(val, node, heads)) return cb(null)
-            node = val
-            loop(i + 1, j, k, cb)
-          })
+        if (val === END_OF_PATH) {
+          writers[rval.log].get(rval.seq, onfilterdups)
           return
         }
 
-        var missing = remoteVals.length
-        var error = null
-
-        for (var l = 0; l < remoteVals.length; l++) {
-          writers[remoteVals[l].log].get(remoteVals[l].seq, onremoteval)
-        }
-
-        function onremoteval (err, val) {
-          if (err) return onvisit(err)
-          if (!updateHead(val, node, heads)) return onvisit(null)
-          self._visitPut(key, path, i + 1, val, heads, trie, onvisit)
-        }
-
-        function onvisit (err) {
-          if (err) error = err
-          if (!--missing) cb(error)
-        }
-        return
+        if (noDup(vals, rval)) vals.push(rval)
       }
+      k = 0
     }
+    j = 0
 
-    cb(null)
+    if (node.path[i] !== val || (node.path[i] === END_OF_PATH && node.key !== key)) {
+      // trie is splitting
+      if (!local) local = trie[i] = []
+      vals = local[node.path[i]] = local[node.path[i]] || []
+      remoteVals = remote[val]
+      vals.push({log: node.log, seq: node.seq})
+
+      if (!remoteVals || !remoteVals.length) return cb(null)
+
+      missing = remoteVals.length
+      error = null
+
+      for (var l = 0; l < remoteVals.length; l++) {
+        writers[remoteVals[l].log].get(remoteVals[l].seq, onremoteval)
+      }
+      return
+    }
+  }
+
+  cb(null)
+
+  function onfilterdups (err, val) {
+    if (err) return cb(err)
+    var valPointer = {log: val.log, seq: val.seq}
+    if (val.key !== key && noDup(vals, valPointer)) vals.push(valPointer)
+    self._visitPut(key, path, i, j, k + 1, node, heads, trie, cb)
+  }
+
+  function onremoteval (err, val) {
+    if (err) return onvisit(err)
+    if (!updateHead(val, node, heads)) return onvisit(null)
+    self._visitPut(key, path, i + 1, j, k, val, heads, trie, onvisit)
+  }
+
+  function onvisit (err) {
+    if (err) error = err
+    if (!--missing) cb(error)
   }
 }
 
 DB.prototype._visitGet = function (key, path, i, node, heads, result, cb) {
   var self = this
   var writers = this.writers
+  var missing = 0
+  var error = null
+  var trie = null
+  var vals = null
 
   for (; i < path.length; i++) {
     if (node.path[i] === path[i]) continue
 
     // check trie
-    var trie = node.trie[i]
+    trie = node.trie[i]
     if (!trie) return cb(null)
 
-    var vals = trie[path[i]]
+    vals = trie[path[i]]
 
     // not found
     if (!vals || !vals.length) return cb(null)
 
-    var missing = vals.length
-    var error = null
+    missing = vals.length
+    error = null
 
     for (var j = 0; j < vals.length; j++) {
       writers[vals[j].log].get(vals[j].seq, onval)
-    }
-
-    function onval (err, val) {
-      if (err) return done(err)
-      if (!updateHead(val, node, heads)) return done(null)
-      self._visitGet(key, path, i + 1, val, heads, result, done)
-    }
-
-    function done (err) {
-      if (err) error = err
-      if (!--missing) cb(error)
     }
 
     return
   }
 
   // check for collisions
-  var trie = node.trie[path.length - 1]
-  var vals = trie && trie[END_OF_PATH]
+  trie = node.trie[path.length - 1]
+  vals = trie && trie[END_OF_PATH]
 
   pushMaybe(key, node, result)
 
   if (!vals || !vals.length) return cb(null)
 
-  var missing = vals.length
-  var error = null
+  missing = vals.length
+  error = null
 
-  for (var i = 0; i < vals.length; i++) {
-    writers[vals[i].log].get(vals[i].seq, onpush)
+  for (var k = 0; k < vals.length; k++) {
+    writers[vals[k].log].get(vals[k].seq, onpush)
   }
 
   function onpush (err, val) {
     if (err) error = err
     else pushMaybe(key, val, result)
+    if (!--missing) cb(error)
+  }
+
+  function onval (err, val) {
+    if (err) return done(err)
+    if (!updateHead(val, node, heads)) return done(null)
+    self._visitGet(key, path, i + 1, val, heads, result, done)
+  }
+
+  function done (err) {
+    if (err) error = err
     if (!--missing) cb(error)
   }
 }
