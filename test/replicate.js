@@ -207,14 +207,14 @@ function sort (a, b) {
 }
 
 function createTwo (cb) {
-  var a = hypercore(ram, {valueEncoding: 'json'})
-  var b = hypercore(ram, {valueEncoding: 'json'})
+  var a = hypercore(ram)
+  var b = hypercore(ram)
 
   a.ready(function () {
     b.ready(function () {
       cb(
-        hyperdb({feeds: [a, hypercore(ram, b.key, {valueEncoding: 'json'})], id: 0}),
-        hyperdb({feeds: [hypercore(ram, a.key, {valueEncoding: 'json'}), b], id: 1})
+        hyperdb({feeds: [a, hypercore(ram, b.key)], id: 0}),
+        hyperdb({feeds: [hypercore(ram, a.key), b], id: 1})
       )
     })
   })

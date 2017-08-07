@@ -14,7 +14,7 @@ Writer.prototype.get = function (seq, cb) {
   var node = this.cache.get(seq)
   if (node) return process.nextTick(cb, null, node)
 
-  this.feed.get(seq, function (err, val) {
+  this.feed.get(seq, {valueEncoding: 'json'}, function (err, val) {
     if (err) return cb(err)
     self.cache.set(seq, val)
     cb(null, val)
@@ -27,5 +27,5 @@ Writer.prototype.head = function (cb) {
 }
 
 Writer.prototype.append = function (node, cb) {
-  this.feed.append(node, cb)
+  this.feed.append(JSON.stringify(node) + '\n', cb)
 }

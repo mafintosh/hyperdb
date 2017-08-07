@@ -20,7 +20,7 @@ function DB (opts) {
 
   // TODO: remove me and change to do the same multi feed does
   if (opts.feed) opts.feeds = [opts.feed]
-  if (!opts.feeds) opts.feeds = [hypercore(ram, {valueEncoding: 'json'})]
+  if (!opts.feeds) opts.feeds = [hypercore(ram)]
   for (var i = 0; i < opts.feeds.length; i++) {
     this.writers.push(writer(opts.feeds[i]))
   }
