@@ -4,6 +4,7 @@ var hypercore = require('hypercore')
 var remove = require('unordered-array-remove')
 var ram = require('random-access-memory')
 var mutexify = require('mutexify')
+var codecs = require('codecs')
 var protocol = null // lazy load on replicate
 
 module.exports = DB
@@ -17,6 +18,7 @@ function DB (opts) {
   this.writers = []
   this.opened = false
 
+  this._codec = opts.valueEncoding ? codecs(opts.valueEncoding) : null
   this._map = opts.map || null
   this._reduce = opts.reduce || null
   this._lock = mutexify() // unneeded once we support batching
@@ -25,7 +27,7 @@ function DB (opts) {
   if (opts.feed) opts.feeds = [opts.feed]
   if (!opts.feeds) opts.feeds = [hypercore(ram)]
   for (var i = 0; i < opts.feeds.length; i++) {
-    this.writers.push(writer(opts.feeds[i], i))
+    this.writers.push(writer(opts.feeds[i], i, this._codec))
   }
 
   this.ready() // call early

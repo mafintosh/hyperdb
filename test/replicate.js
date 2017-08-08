@@ -203,7 +203,7 @@ tape('2 peers, fork and merge write', function (t) {
 })
 
 function sort (a, b) {
-  return a.value.toString('hex').localeCompare(b.value.toString('hex'))
+  return a.value.localeCompare(b.value)
 }
 
 function createTwo (cb) {
@@ -213,8 +213,8 @@ function createTwo (cb) {
   a.ready(function () {
     b.ready(function () {
       cb(
-        hyperdb({feeds: [a, hypercore(ram, b.key)], id: 0}),
-        hyperdb({feeds: [hypercore(ram, a.key), b], id: 1})
+        hyperdb({feeds: [a, hypercore(ram, b.key)], id: 0, valueEncoding: 'json'}),
+        hyperdb({feeds: [hypercore(ram, a.key), b], id: 1, valueEncoding: 'json'})
       )
     })
   })
