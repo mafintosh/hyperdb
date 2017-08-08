@@ -49,7 +49,7 @@ DB.prototype._heads = function (cb) {
 
   function onhead (err, val) {
     if (err) error = err
-    else if (val) result[val.log] = val
+    else if (val) result[val.feed] = val
     if (--missing) return
 
     if (error) return cb(error)
@@ -119,7 +119,7 @@ DB.prototype.replicate = function (opts) {
 DB.prototype.put = function (key, value, cb) {
   if (!cb) cb = noop
 
-  var log = this.id
+  var feed = this.id
   var self = this
   var path = this._hash(key).concat(END_OF_PATH)
 
@@ -130,12 +130,12 @@ DB.prototype.put = function (key, value, cb) {
     var i = 0
 
     for (i = 0; i < self.writers.length; i++) {
-      newHeads.push(i === log ? 0 : self.writers[i].feed.length)
+      newHeads.push(i === feed ? 0 : self.writers[i].feed.length)
     }
 
     var node = {
-      seq: self.writers[log].feed.length,
-      log: log,
+      seq: self.writers[feed].feed.length,
+      feed: feed,
       key: key,
       path: path,
       value: value,
@@ -144,7 +144,7 @@ DB.prototype.put = function (key, value, cb) {
     }
 
     if (!h.length) {
-      self.writers[log].append(node, ondone)
+      self.writers[feed].append(node, ondone)
       return
     }
 
@@ -161,7 +161,7 @@ DB.prototype.put = function (key, value, cb) {
 
       if (error) return cb(err)
 
-      self.writers[log].append(node, ondone)
+      self.writers[feed].append(node, ondone)
     }
 
     function ondone (err) {
@@ -227,7 +227,7 @@ DB.prototype._visitPut = function (key, path, i, j, k, node, heads, trie, cb) {
         var rval = remoteVals[k]
 
         if (val === END_OF_PATH) {
-          writers[rval.log].get(rval.seq, onfilterdups)
+          writers[rval.feed].get(rval.seq, onfilterdups)
           return
         }
 
@@ -242,7 +242,7 @@ DB.prototype._visitPut = function (key, path, i, j, k, node, heads, trie, cb) {
       if (!local) local = trie[i] = []
       vals = local[node.path[i]] = local[node.path[i]] || []
       remoteVals = remote[val]
-      vals.push({log: node.log, seq: node.seq})
+      vals.push({feed: node.feed, seq: node.seq})
 
       if (!remoteVals || !remoteVals.length) return cb(null)
 
@@ -250,7 +250,7 @@ DB.prototype._visitPut = function (key, path, i, j, k, node, heads, trie, cb) {
       error = null
 
       for (var l = 0; l < remoteVals.length; l++) {
-        writers[remoteVals[l].log].get(remoteVals[l].seq, onremoteval)
+        writers[remoteVals[l].feed].get(remoteVals[l].seq, onremoteval)
       }
       return
     }
@@ -260,7 +260,7 @@ DB.prototype._visitPut = function (key, path, i, j, k, node, heads, trie, cb) {
 
   function onfilterdups (err, val) {
     if (err) return cb(err)
-    var valPointer = {log: val.log, seq: val.seq}
+    var valPointer = {feed: val.feed, seq: val.seq}
     if (val.key !== key && noDup(vals, valPointer)) vals.push(valPointer)
     self._visitPut(key, path, i, j, k + 1, node, heads, trie, cb)
   }
@@ -301,7 +301,7 @@ DB.prototype._visitGet = function (key, path, i, node, heads, result, cb) {
     error = null
 
     for (var j = 0; j < vals.length; j++) {
-      writers[vals[j].log].get(vals[j].seq, onval)
+      writers[vals[j].feed].get(vals[j].seq, onval)
     }
 
     return
@@ -319,7 +319,7 @@ DB.prototype._visitGet = function (key, path, i, node, heads, result, cb) {
   error = null
 
   for (var k = 0; k < vals.length; k++) {
-    writers[vals[k].log].get(vals[k].seq, onpush)
+    writers[vals[k].feed].get(vals[k].seq, onpush)
   }
 
   function onpush (err, val) {
@@ -353,8 +353,8 @@ function updateHead (newNode, oldNode, heads) {
 function isHead (node, heads) {
   for (var i = 0; i < heads.length; i++) {
     var head = heads[i]
-    if (head.log === node.log) return false
-    if (node.seq < head.heads[node.log]) return false
+    if (head.feed === node.feed) return false
+    if (node.seq < head.heads[node.feed]) return false
   }
   return true
 }
@@ -365,8 +365,7 @@ function pushMaybe (key, node, results) {
 
 function noDup (list, val) {
   for (var i = 0; i < list.length; i++) {
-    if (list[i].log === val.log && list[i].seq === val.seq) {
-      // console.log('ignore dup', val)
+    if (list[i].feed === val.feed && list[i].seq === val.seq) {
       return false
     }
   }
