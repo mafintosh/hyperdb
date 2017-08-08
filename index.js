@@ -166,7 +166,7 @@ DB.prototype.put = function (key, value, cb) {
 
     function ondone (err) {
       if (err) return cb(err)
-      return cb(null, node)
+      return cb(null, self._map ? self._map(node) : node)
     }
   })
 }
