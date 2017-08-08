@@ -133,25 +133,29 @@ DB.prototype.put = function (key, value, cb) {
       newHeads.push(i === log ? 0 : self.writers[i].feed.length)
     }
 
+    var node = {
+      seq: self.writers[log].feed.length,
+      log: log,
+      key: key,
+      path: path,
+      value: value,
+      heads: newHeads,
+      trie: []
+    }
+
     if (!h.length) {
-      self.writers[log].append({
-        seq: self.writers[log].feed.length,
-        log: log,
-        key: key,
-        path: path,
-        value: value,
-        heads: newHeads,
-        trie: []
-      }, cb)
+      self.writers[log].append(node, function (err) {
+        if (err) return cb(err)
+        return cb(null, node)
+      })
       return
     }
 
-    var trie = []
     var missing = h.length
     var error = null
 
     for (i = 0; i < h.length; i++) {
-      self._visitPut(key, path, 0, 0, 0, h[i], h, trie, onput)
+      self._visitPut(key, path, 0, 0, 0, h[i], h, node.trie, onput)
     }
 
     function onput (err) {
@@ -160,15 +164,10 @@ DB.prototype.put = function (key, value, cb) {
 
       if (error) return cb(err)
 
-      self.writers[log].append({
-        seq: self.writers[log].feed.length,
-        log: log,
-        key: key,
-        path: path,
-        value: value,
-        heads: newHeads,
-        trie: trie
-      }, cb)
+      self.writers[log].append(node, function (err) {
+        if (err) return cb(err)
+        return cb(null, node)
+      })
     }
   })
 }
