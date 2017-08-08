@@ -1,5 +1,5 @@
-var hash = require('./hash')
-var writer = require('./writer')
+var hash = require('./lib/hash')
+var writer = require('./lib/writer')
 var hypercore = require('hypercore')
 var remove = require('unordered-array-remove')
 var ram = require('random-access-memory')
@@ -18,16 +18,16 @@ function DB (opts) {
   this.writers = []
   this.opened = false
 
+  this._hash = hash()
+  this._map = opts.map || null
+  this._reduce = opts.reduce || null
+
   // TODO: remove me and change to do the same multi feed does
   if (opts.feed) opts.feeds = [opts.feed]
   if (!opts.feeds) opts.feeds = [hypercore(ram)]
   for (var i = 0; i < opts.feeds.length; i++) {
-    this.writers.push(writer(opts.feeds[i]))
+    this.writers.push(writer(opts.feeds[i], i, this._hash))
   }
-
-  this._hash = hash()
-  this._map = opts.map || null
-  this._reduce = opts.reduce || null
 
   this.ready() // call early
 }
