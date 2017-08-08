@@ -202,3 +202,26 @@ tape('insert 100 values and get them all', function (t) {
     }
   }
 })
+
+tape('race works', function (t) {
+  t.plan(40)
+
+  var missing = 10
+  var db = create.one()
+
+  for (var i = 0; i < 10; i++) db.put('#' + i, '#' + i, done)
+
+  function done (err) {
+    t.error(err, 'no error')
+    if (--missing) return
+    for (var i = 0; i < 10; i++) same('#' + i)
+  }
+
+  function same (val) {
+    db.get(val, function (err, node) {
+      t.error(err, 'no error')
+      t.same(node.key, val)
+      t.same(node.value, val)
+    })
+  }
+})

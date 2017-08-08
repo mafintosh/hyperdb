@@ -3,6 +3,7 @@ var writer = require('./lib/writer')
 var hypercore = require('hypercore')
 var remove = require('unordered-array-remove')
 var ram = require('random-access-memory')
+var mutexify = require('mutexify')
 var protocol = null // lazy load on replicate
 
 var END_OF_PATH = 4 // max(hash alphabet) + 1
@@ -21,6 +22,7 @@ function DB (opts) {
   this._hash = hash()
   this._map = opts.map || null
   this._reduce = opts.reduce || null
+  this._lock = mutexify() // unneeded once we support batching
 
   // TODO: remove me and change to do the same multi feed does
   if (opts.feed) opts.feeds = [opts.feed]
@@ -117,6 +119,16 @@ DB.prototype.replicate = function (opts) {
 }
 
 DB.prototype.put = function (key, value, cb) {
+  var self = this
+
+  this._lock(function (release) {
+    self._put(key, value, function (err) {
+      release(cb, err)
+    })
+  })
+}
+
+DB.prototype._put = function (key, value, cb) {
   if (!cb) cb = noop
 
   var feed = this.id
