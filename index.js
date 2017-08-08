@@ -144,10 +144,7 @@ DB.prototype.put = function (key, value, cb) {
     }
 
     if (!h.length) {
-      self.writers[log].append(node, function (err) {
-        if (err) return cb(err)
-        return cb(null, node)
-      })
+      self.writers[log].append(node, ondone)
       return
     }
 
@@ -164,10 +161,12 @@ DB.prototype.put = function (key, value, cb) {
 
       if (error) return cb(err)
 
-      self.writers[log].append(node, function (err) {
-        if (err) return cb(err)
-        return cb(null, node)
-      })
+      self.writers[log].append(node, ondone)
+    }
+
+    function ondone (err) {
+      if (err) return cb(err)
+      return cb(null, node)
     }
   })
 }
