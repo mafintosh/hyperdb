@@ -6,8 +6,6 @@ var ram = require('random-access-memory')
 var mutexify = require('mutexify')
 var protocol = null // lazy load on replicate
 
-var END_OF_PATH = 4 // max(hash alphabet) + 1
-
 module.exports = DB
 
 function DB (opts) {
@@ -19,7 +17,6 @@ function DB (opts) {
   this.writers = []
   this.opened = false
 
-  this._hash = hash()
   this._map = opts.map || null
   this._reduce = opts.reduce || null
   this._lock = mutexify() // unneeded once we support batching
@@ -28,7 +25,7 @@ function DB (opts) {
   if (opts.feed) opts.feeds = [opts.feed]
   if (!opts.feeds) opts.feeds = [hypercore(ram)]
   for (var i = 0; i < opts.feeds.length; i++) {
-    this.writers.push(writer(opts.feeds[i], i, this._hash))
+    this.writers.push(writer(opts.feeds[i], i))
   }
 
   this.ready() // call early
@@ -133,7 +130,7 @@ DB.prototype._put = function (key, value, cb) {
 
   var feed = this.id
   var self = this
-  var path = this._hash(key).concat(END_OF_PATH)
+  var path = hash(key, true)
 
   this._heads(function (err, h) {
     if (err) return cb(err)
@@ -184,7 +181,7 @@ DB.prototype._put = function (key, value, cb) {
 }
 
 DB.prototype.get = function (key, cb) {
-  var path = this._hash(key).concat(END_OF_PATH)
+  var path = hash(key, true)
   var result = []
   var self = this
 
@@ -229,7 +226,7 @@ DB.prototype._visitPut = function (key, path, i, j, k, node, heads, trie, cb) {
 
     // copy old trie
     for (; j < remote.length; j++) {
-      if (j === val && val !== END_OF_PATH) continue
+      if (j === val && val !== hash.TERMINATE) continue
 
       if (!local) local = trie[i] = []
       vals = local[j] = local[j] || []
@@ -238,7 +235,7 @@ DB.prototype._visitPut = function (key, path, i, j, k, node, heads, trie, cb) {
       for (; k < remoteVals.length; k++) {
         var rval = remoteVals[k]
 
-        if (val === END_OF_PATH) {
+        if (val === hash.TERMINATE) {
           writers[rval.feed].get(rval.seq, onfilterdups)
           return
         }
@@ -249,7 +246,7 @@ DB.prototype._visitPut = function (key, path, i, j, k, node, heads, trie, cb) {
     }
     j = 0
 
-    if (node.path[i] !== val || (node.path[i] === END_OF_PATH && node.key !== key)) {
+    if (node.path[i] !== val || (node.path[i] === hash.TERMINATE && node.key !== key)) {
       // trie is splitting
       if (!local) local = trie[i] = []
       vals = local[node.path[i]] = local[node.path[i]] || []
@@ -321,7 +318,7 @@ DB.prototype._visitGet = function (key, path, i, node, heads, result, cb) {
 
   // check for collisions
   trie = node.trie[path.length - 1]
-  vals = trie && trie[END_OF_PATH]
+  vals = trie && trie[hash.TERMINATE]
 
   pushMaybe(key, node, result)
 
