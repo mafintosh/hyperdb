@@ -59,8 +59,8 @@ DB.prototype._heads = function (cb) {
       var head = result[i]
       if (!head) continue
 
-      for (var j = 0; j < head.heads.length; j++) {
-        if (result[j] && result[j].seq < head.heads[j]) result[j] = null
+      for (var j = 0; j < head.clock.length; j++) {
+        if (result[j] && result[j].seq < head.clock[j]) result[j] = null
       }
     }
 
@@ -137,11 +137,11 @@ DB.prototype._put = function (key, value, cb) {
   this._heads(function (err, h) {
     if (err) return cb(err)
 
-    var newHeads = []
+    var clock = []
     var i = 0
 
     for (i = 0; i < self.writers.length; i++) {
-      newHeads.push(i === feed ? 0 : self.writers[i].feed.length)
+      clock.push(i === feed ? 0 : self.writers[i].feed.length)
     }
 
     var node = {
@@ -150,7 +150,7 @@ DB.prototype._put = function (key, value, cb) {
       key: key,
       path: path,
       value: value,
-      heads: newHeads,
+      clock: clock,
       trie: []
     }
 
@@ -365,7 +365,7 @@ function isHead (node, heads) {
   for (var i = 0; i < heads.length; i++) {
     var head = heads[i]
     if (head.feed === node.feed) return false
-    if (node.seq < head.heads[node.feed]) return false
+    if (node.seq < head.clock[node.feed]) return false
   }
   return true
 }
