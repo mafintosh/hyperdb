@@ -181,7 +181,7 @@ DB.prototype._put = function (key, value, cb) {
     }
 
     var node = {
-      seq: self._writers[feed].feed.length,
+      seq: self._localWriter.feed.length,
       feed: feed,
       key: key,
       path: path,
@@ -191,7 +191,7 @@ DB.prototype._put = function (key, value, cb) {
     }
 
     if (!h.length) {
-      self._writers[feed].append(node, ondone)
+      self._localWriter.append(node, ondone)
       return
     }
 
@@ -208,7 +208,7 @@ DB.prototype._put = function (key, value, cb) {
 
       if (error) return cb(err)
 
-      self._writers[feed].append(node, ondone)
+      self._localWriter.append(node, ondone)
     }
 
     function ondone (err) {
