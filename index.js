@@ -1,604 +1,496 @@
-var sodium = require('sodium-universal')
-var protocol = require('hypercore-protocol')
-var allocUnsafe = require('buffer-alloc-unsafe')
-var toBuffer = require('to-buffer')
-var thunky = require('thunky')
+var hash = require('./lib/hash')
+var writer = require('./lib/writer')
+var hypercore = require('hypercore')
+var remove = require('unordered-array-remove')
+var raf = require('random-access-file')
 var mutexify = require('mutexify')
-var peer = require('./lib/peer')
-
-var KEY = allocUnsafe(sodium.crypto_shorthash_KEYBYTES).fill(0)
+var thunky = require('thunky')
+var codecs = require('codecs')
+var events = require('events')
+var inherits = require('inherits')
+var toBuffer = require('to-buffer')
+var protocol = null // lazy load on replicate
 
 module.exports = DB
 
-function DB (feeds, opts) {
-  if (!(this instanceof DB)) return new DB(feeds, opts)
+function DB (storage, key, opts) {
+  if (!(this instanceof DB)) return new DB(storage, key, opts)
+  events.EventEmitter.call(this)
+
+  if (isOptions(key)) {
+    opts = key
+    key = null
+  }
+
   if (!opts) opts = {}
 
   var self = this
 
-  this.feeds = feeds
-  this.ready = thunky(open)
-  this.writable = false
-  this.readable = !!feeds.length
-  this.key = null
+  this.key = key ? toBuffer(key, 'hex') : null
   this.discoveryKey = null
+  this.local = null
+  this.source = null
+  this.opened = false
+  this.sparse = !!opts.sparse
 
-  this._peers = []
-  this._peersByKey = {}
-  this._writer = null
-  this._lock = mutexify()
-  this._map = opts.map
-  this._reduce = opts.reduce
+  this._codec = opts.valueEncoding ? codecs(opts.valueEncoding) : null
+  this._storage = typeof storage === 'string' ? fileStorage : storage
+  this._map = opts.map || null
+  this._reduce = opts.reduce || null
+  this._writers = []
+  this._lock = mutexify() // unneeded once we support batching
+  this._localWriter = null
 
-  feeds[0].on('peer-add', onpeer)
-  feeds[0].ready(function (err) {
-    if (err) throw err // yolo
-    self.key = feeds[0].key
-    self.discoveryKey = feeds[0].discoveryKey
-  })
-
-  function onpeer () {
-    var peer = feeds[0].peers[feeds[0].peers.length - 1] // hack
-    self._onpeer(peer)
-  }
+  this.ready = thunky(open)
+  this.ready()
 
   function open (cb) {
     self._open(cb)
   }
+
+  function fileStorage (name) {
+    return raf(name, {directory: storage})
+  }
 }
 
-DB.prototype._onpeer = function (peer) {
+inherits(DB, events.EventEmitter)
+
+DB.prototype._heads = function (cb) {
+  var result = []
+  var error = null
   var self = this
+  var missing = 0
+  var i = 0
 
-  peer.stream.on('extension', function (type, message) {
-    if (type !== 'hyperdb') return
+  this.ready(onready)
 
-    message = JSON.parse(message)
+  function onready (err) {
+    if (err) return cb(err)
 
-    if (message.type === 'get') {
-      self.nodes(message.key, function (err, nodes) {
-        if (err) return
-        peer.stream.extension('hyperdb', toBuffer(JSON.stringify({type: 'nodes', nodes: nodes})))
-      })
-      return
+    for (; i < self._writers.length; i++) {
+      missing++
+      self._writers[i].head(onhead)
     }
+  }
 
-    if (message.type === 'nodes') {
-      var nodes = message.nodes
+  function onhead (err, val, updated) {
+    if (updated) onready(null)
 
-      for (var i = 0; i < nodes.length; i++) {
-        var feed = self._peersByKey[nodes[i].feed].feed
-        if (!feed.has(nodes[i].seq)) feed.get(nodes[i].seq, noop)
+    if (err) error = err
+    else if (val) result[val.feed] = val
+    if (--missing) return
+
+    if (error) return cb(error)
+
+    for (var i = 0; i < result.length; i++) {
+      var head = result[i]
+      if (!head) continue
+
+      for (var j = 0; j < head.clock.length; j++) {
+        if (result[j] && result[j].seq < head.clock[j]) result[j] = null
       }
-      // return
     }
-  })
+
+    cb(null, result.filter(Boolean))
+  }
+}
+
+DB.prototype.authorize = function (key, cb) {
+  this._createWriter(key)
+  this.put('', '', cb)
 }
 
 DB.prototype.replicate = function (opts) {
+  if (!protocol) protocol = require('hypercore-protocol')
   if (!opts) opts = {}
 
-  var self = this
-  var stream = protocol({
-    id: this.feeds[0].id,
-    extensions: ['hyperdb'],
-    expectedFeeds: this.feeds.length
-  })
+  var len = this._writers.length
+  opts.expectedFeeds = len
 
-  self.feeds[0].ready(function () {
-    for (var i = 0; i < self.feeds.length; i++) {
-      self.feeds[i].replicate({stream: stream})
+  var self = this
+  var stream = protocol(opts)
+
+  opts.stream = stream
+
+  if (!opts.live) this._heads(noop)
+  this.ready(function (err) {
+    if (err) return stream.destroy(err)
+    if (stream.destroyed) return
+
+    for (var i = 0; i < self._writers.length; i++) {
+      self._writers[i].feed.replicate(opts)
+    }
+
+    if (!opts.live) self.on('append', onappend)
+    self.on('_writer', onwriter)
+    stream.on('close', onclose)
+
+    function onclose () {
+      self.removeListener('_writer', onwriter)
+      self.removeListener('_writer', onwriter)
+    }
+
+    function onappend () {
+      // hack! make api in hypercore-protocol for this
+      if (stream.destroyed) return
+      stream.expectedFeeds += 1e9
+      self._heads(function () { // will reload new feeds
+        stream.expectedFeeds -= 1e9
+        stream.expectedFeeds += (self._writers.length - len)
+        len = self._writers.length
+        if (!stream.expectedFeeds) stream.finalize()
+      })
+    }
+
+    function onwriter (w) {
+      if (stream.destroyed) return
+      w.feed.replicate(opts)
     }
   })
 
   return stream
 }
 
-DB.prototype._open = function (cb) {
-  var missing = this.feeds.length
-  var error = null
+DB.prototype.put = function (key, value, cb) {
   var self = this
 
-  for (var i = 0; i < this.feeds.length; i++) {
-    this.feeds[i].ready(onready)
-  }
-
-  function onready (err) {
-    if (err) error = err
-    if (--missing) return
-    if (error) return cb(error)
-
-    for (var i = 0; i < self.feeds.length; i++) {
-      self._peersByKey[self.feeds[i].key.toString('hex')] = self._peers[i] = peer(self.feeds[i])
-
-      if (self.feeds[i].writable) {
-        self._writer = self.feeds[i]
-        self.writable = true
-      }
-    }
-
-    cb(null)
-  }
+  this._lock(function (release) {
+    self._put(key, value, function (err) {
+      release(cb, err)
+    })
+  })
 }
 
-DB.prototype.nodes = function (key, cb) {
-  var self = this
+DB.prototype._put = function (key, value, cb) {
+  if (!cb) cb = noop
 
-  this.ready(function (err) {
+  var self = this
+  var path = hash(key, true)
+
+  this._heads(function (err, h) {
     if (err) return cb(err)
 
-    self._heads(function (err, heads) {
+    if (!self._localWriter) self._localWriter = self._createWriter(self.local.key, 'local')
+
+    var feed = self._localWriter.id
+    var clock = []
+    var i = 0
+
+    for (i = 0; i < self._writers.length; i++) {
+      clock.push(i === feed ? 0 : self._writers[i].feed.length)
+    }
+
+    var node = {
+      seq: self._localWriter.feed.length,
+      feed: feed,
+      key: key,
+      path: path,
+      value: value,
+      clock: clock,
+      trie: []
+    }
+
+    if (!h.length) {
+      self._localWriter.append(node, ondone)
+      return
+    }
+
+    var missing = h.length
+    var error = null
+
+    for (i = 0; i < h.length; i++) {
+      self._visitPut(key, path, 0, 0, 0, h[i], h, node.trie, onput)
+    }
+
+    function onput (err) {
+      if (err) error = err
+      if (--missing) return
+
+      if (error) return cb(err)
+
+      self._localWriter.append(node, ondone)
+    }
+
+    function ondone (err) {
       if (err) return cb(err)
-
-      var i = 0
-      var nodes = []
-
-      var record = heads
-        .map(function (head) {
-          return head && {feed: head.feed, seq: head.seq}
-        })
-        .filter(x => x)
-
-      loop(null)
-
-      function loop (err) {
-        if (err) return cb(err)
-        if (i >= heads.length) return done()
-        var head = heads[i++]
-
-        self._get(head, key, nodes, record, loop)
-      }
-
-      function done () {
-        cb(null, record)
-      }
-    })
+      return cb(null, self._map ? self._map(node) : node)
+    }
   })
 }
 
 DB.prototype.get = function (key, cb) {
+  var path = hash(key, true)
+  var result = []
   var self = this
 
-  this.ready(function (err) {
+  this._heads(function (err, h) {
     if (err) return cb(err)
+    if (!h.length) return cb(null, null)
 
-    for (var i = 0; i < self.feeds[0].peers.length; i++) {
-      self.feeds[0].peers[i].stream.extension('hyperdb', toBuffer(JSON.stringify({type: 'get', key: key})))
-    }
-
-    self._heads(function (err, heads) {
-      if (err) return cb(err)
-
-      var i = 0
-      var nodes = []
-
-      loop(null)
-
-      function loop (err) {
-        if (err) return cb(err)
-        if (i >= heads.length) return done()
-        var head = heads[i++]
-
-        self._get(head, key, nodes, null, loop)
-      }
-
-      function done () {
-        nodes = dedup(nodes, heads)
-        if (!nodes.length) return cb(new Error('Not found'))
-
-        if (self._reduce) {
-          var node = nodes.reduce(self._reduce)
-          if (!node) return cb(new Error('Not found'))
-          return cb(null, self._map ? self._map(node) : node)
-        }
-        if (self._map) {
-          nodes = nodes.map(self._map)
-        }
-
-        cb(null, nodes)
-      }
-    })
-  })
-}
-
-DB.prototype._get = function (head, key, result, record, cb) {
-  if (!head) return cb(null)
-
-  if (head.key === key) {
-    result.push(head)
-    return cb(null)
-  }
-
-  var path = toPath(key)
-  var cmp = compare(head.path, path)
-  var ptrs = head.pointers[cmp]
-
-  if (!ptrs.length) return cb(null)
-  var target = path[cmp]
-  var self = this
-
-  ptrs = ptrs.filter(function (p) {
-    if (p.v === undefined) return true
-    return p.v === target
-  })
-
-  if (record) {
-    for (var i = 0; i < ptrs.length; i++) {
-      record.push({feed: ptrs[i].feed, seq: ptrs[i].seq})
-    }
-  }
-
-  this._getAll(ptrs, function (err, nodes) {
-    if (err) return cb(err)
-
-    var i = 0
-    loop(null)
-
-    function loop (err) {
-      if (err) return cb(err)
-      if (i === nodes.length) return cb(null)
-
-      var node = nodes[i++]
-
-      if (node.path[cmp] === target) {
-        return self._get(node, key, result, record, loop)
-      }
-
-      process.nextTick(loop)
-    }
-  })
-}
-
-DB.prototype._append = function (node, cb) {
-  if (!this._writer) return cb(new Error('No writable feed. Cannot append'))
-
-  if (this._writer.length === 0) {
-    this._writer.append([{type: 'hyperdb', version: 0}, node], cb)
-  } else {
-    this._writer.append(node, cb)
-  }
-}
-
-DB.prototype._heads = function (cb) {
-  var error = null
-  var heads = []
-  var missing = this._peers.length
-
-  this._peers.forEach(function (peer, i) {
-    peer.head(function (err, head) {
-      if (err) error = err
-      else heads[i] = head
-
-      if (--missing) return
-      cb(error, heads)
-    })
-  })
-}
-
-DB.prototype.put = function (key, val, cb) {
-  if (!cb) cb = noop
-
-  var self = this
-
-  this._lock(function (release) {
-    self._put(key, val, function (err) {
-      if (err) return release(cb, err)
-      release(cb, null)
-    })
-  })
-}
-
-DB.prototype._put = function (key, val, cb) {
-  var self = this
-
-  this.ready(function (err) {
-    if (err) return cb(err)
-
-    self._heads(function (err, heads) {
-      if (err) return cb(err)
-      if (heads.every(isNull)) return self._init(key, val, cb)
-
-      var path = toPath(key)
-      var i = 0
-      var pointers = []
-      var seq = Math.max(self._writer.length, 1)
-      var me = self._writer.key.toString('hex')
-
-      heads = heads.filter(x => x)
-      loop()
-
-      function onlyNumber (val) {
-        return typeof val === 'number' ? val : undefined
-      }
-
-      function filter (result, val, i) {
-        result = result.filter(function (r) {
-          if (r.key === key) return false
-          if (r.feed === me && r.path[i] === val) {
-            return false
-          }
-          return true
-        })
-
-        result = result.map(function (r) {
-          return {feed: r.feed, seq: r.seq, v: onlyNumber(r.path[i])}
-        })
-
-        result.push({
-          feed: me,
-          seq: seq,
-          v: onlyNumber(val)
-        })
-
-        return result
-      }
-
-      function done () {
-        var node = {
-          feed: me,
-          seq: seq,
-          key: key,
-          pointers: pointers,
-          path: path,
-          value: val,
-          heads: self.feeds
-            .map(function (f) {
-              return f !== self._writer && {
-                feed: f.key.toString('hex'),
-                length: f.length
-              }
-            })
-            .filter(function (f) {
-              return f
-            })
-        }
-
-        self._append(node, cb)
-      }
-
-      function loop (err, nodes) {
-        if (err) return cb(err)
-
-        if (nodes) {
-          pointers.push(filter(nodes, path[i], i))
-          i++
-        }
-
-        if (i === path.length) return done()
-        self._listHeads(heads, path.slice(0, i), loop)
-      }
-    })
-  })
-}
-
-DB.prototype.list = function (path, cb) {
-  var self = this
-
-  this.ready(function (err) {
-    if (err) return cb(err)
-
-    self._heads(function (err, heads) {
-      if (err) return cb(err)
-
-      self._listHeads(heads, path, cb)
-    })
-  })
-}
-
-DB.prototype.close = function (cb) {
-  if (!cb) cb = noop
-
-  var self = this
-
-  this.ready(function (err) {
-    if (err) return cb(err)
-
-    self.readable = false
-    self.writable = false
-
-    var missing = self.feeds.length
+    var missing = h.length
     var error = null
 
-    self.feeds.forEach(function (feed) {
-      feed.close(function (err) {
-        if (err) error = err
-        if (--missing) return
-        cb(error)
-      })
+    for (var i = 0; i < h.length; i++) {
+      self._visitGet(key, path, 0, h[i], h, result, onget)
+    }
+
+    function onget (err) {
+      if (err) error = err
+      if (--missing) return
+      if (error) return cb(error)
+
+      if (!result.length) return cb(null, null)
+
+      if (self._map) result = result.map(self._map)
+      if (self._reduce) result = result.reduce(self._reduce)
+
+      cb(null, result)
+    }
+  })
+}
+
+DB.prototype._visitPut = function (key, path, i, j, k, node, heads, trie, cb) {
+  var writers = this._writers
+  var self = this
+  var missing = 0
+  var error = null
+  var vals = null
+  var remoteVals = null
+
+  for (; i < path.length; i++) {
+    var val = path[i]
+    var local = trie[i]
+    var remote = node.trie[i] || []
+
+    // copy old trie
+    for (; j < remote.length; j++) {
+      if (j === val && val !== hash.TERMINATE) continue
+
+      if (!local) local = trie[i] = []
+      vals = local[j] = local[j] || []
+      remoteVals = remote[j] || []
+
+      for (; k < remoteVals.length; k++) {
+        var rval = remoteVals[k]
+
+        if (val === hash.TERMINATE) {
+          writers[rval.feed].get(rval.seq, onfilterdups)
+          return
+        }
+
+        if (noDup(vals, rval)) vals.push(rval)
+      }
+      k = 0
+    }
+    j = 0
+
+    if (node.path[i] !== val || (node.path[i] === hash.TERMINATE && node.key !== key)) {
+      // trie is splitting
+      if (!local) local = trie[i] = []
+      vals = local[node.path[i]] = local[node.path[i]] || []
+      remoteVals = remote[val]
+      vals.push({feed: node.feed, seq: node.seq})
+
+      if (!remoteVals || !remoteVals.length) return cb(null)
+
+      missing = remoteVals.length
+      error = null
+
+      for (var l = 0; l < remoteVals.length; l++) {
+        writers[remoteVals[l].feed].get(remoteVals[l].seq, onremoteval)
+      }
+      return
+    }
+  }
+
+  cb(null)
+
+  function onfilterdups (err, val) {
+    if (err) return cb(err)
+    var valPointer = {feed: val.feed, seq: val.seq}
+    if (val.key !== key && noDup(vals, valPointer)) vals.push(valPointer)
+    self._visitPut(key, path, i, j, k + 1, node, heads, trie, cb)
+  }
+
+  function onremoteval (err, val) {
+    if (err) return onvisit(err)
+    if (!updateHead(val, node, heads)) return onvisit(null)
+    self._visitPut(key, path, i + 1, j, k, val, heads, trie, onvisit)
+  }
+
+  function onvisit (err) {
+    if (err) error = err
+    if (!--missing) cb(error)
+  }
+}
+
+DB.prototype._open = function (cb) {
+  var self = this
+  var source = this._createFeed(this.key, 'source')
+
+  source.on('ready', function () {
+    self.source = source
+    self.key = source.key
+    self.discoveryKey = source.discoveryKey
+
+    var w = self._createWriter(self.key, 'source')
+
+    if (source.writable) {
+      self.local = source
+      self._localWriter = w
+      return cb(null)
+    }
+
+    var local = self._createFeed(null, 'local')
+
+    local.on('ready', function () {
+      self.local = local
+      cb(null)
     })
   })
 }
 
-DB.prototype._listHeads = function (heads, path, cb) {
+DB.prototype._createFeed = function (key, dir) {
+  if (!dir) {
+    dir = key.toString('hex')
+    dir = dir.slice(0, 2) + '/' + dir.slice(2)
+  }
+
+  if (key) {
+    if (this.local && this.local.key && this.local.key.equals(key)) return this.local
+    if (this.source && this.source.key && this.source.key.equals(key)) return this.source
+  }
+
   var self = this
-  var i = 0
-  var result = []
+  var feed = hypercore(storage, key, {sparse: this.sparse})
 
-  loop(null, null)
+  feed.on('error', onerror)
+  feed.on('append', onappend)
 
-  function loop (err, nodes) {
-    if (err) return cb(err)
+  return feed
 
-    if (nodes) {
-      for (var j = 0; j < nodes.length; j++) {
-        result.push(nodes[j])
-      }
-    }
+  function onerror (err) {
+    self.emit('error', err)
+  }
 
-    if (i === heads.length) {
-      return cb(null, dedupKeys(result, heads))
-    }
+  function onappend () {
+    self.emit('append', this)
+  }
 
-    self._list(heads[i++], path, loop)
+  function storage (name) {
+    return self._storage(dir + '/' + name)
   }
 }
 
-DB.prototype._list = function (head, path, cb) {
+DB.prototype._createWriter = function (key, dir) {
+  for (var i = 0; i < this._writers.length; i++) {
+    var w = this._writers[i]
+    if (key && w.key.equals(key)) return w
+  }
+
+  var res = writer(this, this._createFeed(key, dir), this._writers.length)
+
+  this._writers.push(res)
+  this.emit('_writer', res)
+
+  return res
+}
+
+DB.prototype._visitGet = function (key, path, i, node, heads, result, cb) {
   var self = this
+  var writers = this._writers
+  var missing = 0
+  var error = null
+  var trie = null
+  var vals = null
 
-  if (!head) return cb(null, [])
+  for (; i < path.length; i++) {
+    if (node.path[i] === path[i]) continue
 
-  var cmp = compare(head.path, path)
-  var ptrs = head.pointers[cmp]
+    // check trie
+    trie = node.trie[i]
+    if (!trie) return cb(null)
 
-  if (cmp === path.length) {
-    self._getAll(ptrs, cb)
+    vals = trie[path[i]]
+
+    // not found
+    if (!vals || !vals.length) return cb(null)
+
+    missing = vals.length
+    error = null
+
+    for (var j = 0; j < vals.length; j++) {
+      writers[vals[j].feed].get(vals[j].seq, onval)
+    }
+
     return
   }
 
-  self._closer(path, cmp, ptrs, cb)
-}
+  // check for collisions
+  trie = node.trie[path.length - 1]
+  vals = trie && trie[hash.TERMINATE]
 
-DB.prototype._init = function (key, val, cb) {
-  var self = this
-  var seq = Math.max(this._writer.length, 1)
+  pushMaybe(key, node, result)
 
-  var node = {
-    feed: this._writer.key.toString('hex'),
-    seq: seq,
-    key: key,
-    pointers: toPath(key).map(function (v) {
-      return [{feed: self._writer.key.toString('hex'), seq: seq}]
-    }),
-    path: toPath(key),
-    value: val,
-    heads: this.feeds
-      .map(function (f) {
-        return f !== self._writer && {
-          feed: f.key.toString('hex'),
-          length: f.length
-        }
-      })
-      .filter(function (f) {
-        return f
-      })
+  if (!vals || !vals.length) return cb(null)
+
+  missing = vals.length
+  error = null
+
+  for (var k = 0; k < vals.length; k++) {
+    writers[vals[k].feed].get(vals[k].seq, onpush)
   }
 
-  this._append(node, cb)
-}
-
-DB.prototype._closer = function (path, cmp, ptrs, cb) {
-  var target = path[cmp]
-  var self = this
-
-  this._getAll(ptrs, function (err, nodes) {
-    if (err) return cb(err)
-
-    for (var i = 0; i < nodes.length; i++) {
-      var node = nodes[i]
-
-      if (node.path[cmp] === target) {
-        self._list(node, path, cb)
-        return
-      }
-    }
-
-    cb(null, [])
-  })
-}
-
-DB.prototype._getAll = function (pointers, cb) {
-  if (!pointers || !pointers.length) return cb(null, [])
-
-  var all = new Array(pointers.length)
-  var missing = all.length
-  var error = null
-  var self = this
-
-  pointers.forEach(function (ptr, i) {
-    self._peersByKey[ptr.feed].get(ptr.seq, function (err, node) {
-      if (err) error = err
-      if (node) all[i] = node
-      if (--missing) return
-
-      if (error) cb(error)
-      else cb(null, all)
-    })
-  })
-}
-
-function dedupKeys (nodes, heads) {
-  nodes.sort(function (a, b) {
-    return a.key.localeCompare(b.key)
-  })
-
-  var batch = nodes.slice(0, 1)
-  var all = []
-
-  for (var i = 1; i < nodes.length; i++) {
-    if (nodes[i - 1].key === nodes[i].key) {
-      batch.push(nodes[i])
-    } else {
-      all = all.concat(dedup(batch, heads))
-      batch = [nodes[i]]
-    }
+  function onpush (err, val) {
+    if (err) error = err
+    else pushMaybe(key, val, result)
+    if (!--missing) cb(error)
   }
 
-  return all.concat(dedup(batch, heads))
-}
-
-function dedup (nodes, heads) {
-  nodes = nodes.filter(function (n, i) {
-    return indexOf(n) === i
-  })
-
-  nodes = nodes.filter(function (n) {
-    return !nodes.some(function (o) {
-      if (o.feed === n.feed && o.seq > n.seq) return true
-      return o.heads.some(function (head) {
-        return head.feed === n.feed && head.length > n.seq
-      })
-    })
-  })
-
-  return nodes
-
-  function indexOf (n) {
-    for (var i = 0; i < nodes.length; i++) {
-      if (nodes[i].feed === n.feed && nodes[i].seq === n.seq) return i
-    }
-    return -1
-  }
-}
-
-function toPath (key) {
-  var arr = splitHash(hash(toBuffer(key)))
-  arr.push(key)
-  return arr
-}
-
-function isNull (v) {
-  return v === null
-}
-
-function compare (a, b) {
-  var idx = 0
-  while (idx < a.length && a[idx] === b[idx]) idx++
-  return idx
-}
-
-function hash (key) {
-  var out = allocUnsafe(8)
-  sodium.crypto_shorthash(out, key, KEY)
-  return out
-}
-
-function splitHash (hash) {
-  var list = []
-  for (var i = 0; i < hash.length; i++) {
-    factor(hash[i], 4, 4, list)
+  function onval (err, val) {
+    if (err) return done(err)
+    if (!updateHead(val, node, heads)) return done(null)
+    self._visitGet(key, path, i + 1, val, heads, result, done)
   }
 
-  return list
-}
-
-function factor (n, b, cnt, list) {
-  while (cnt--) {
-    var r = n & (b - 1)
-    list.push(r)
-    n -= r
-    n /= b
+  function done (err) {
+    if (err) error = err
+    if (!--missing) cb(error)
   }
 }
 
 function noop () {}
+
+function updateHead (newNode, oldNode, heads) {
+  var i = heads.indexOf(oldNode)
+  if (i !== -1) remove(heads, i)
+  if (!isHead(newNode, heads)) return false
+  heads.push(newNode)
+  return true
+}
+
+function isHead (node, heads) {
+  for (var i = 0; i < heads.length; i++) {
+    var head = heads[i]
+    if (head.feed === node.feed) return false
+    if (node.seq < head.clock[node.feed]) return false
+  }
+  return true
+}
+
+function pushMaybe (key, node, results) {
+  if (node.key === key && noDup(results, node)) results.push(node)
+}
+
+function noDup (list, val) {
+  for (var i = 0; i < list.length; i++) {
+    if (list[i].feed === val.feed && list[i].seq === val.seq) {
+      return false
+    }
+  }
+  return true
+}
+
+function isOptions (opts) {
+  return !!(opts && typeof opts !== 'string' && !Buffer.isBuffer(opts))
+}

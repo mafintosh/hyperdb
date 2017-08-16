@@ -1,26 +1,30 @@
 {
   "name": "hyperdb",
-  "version": "0.0.0",
-  "description": "Scalable distributed database",
+  "version": "1.0.0-rc1",
+  "description": "Distributed scalable database",
   "main": "index.js",
   "dependencies": {
     "array-lru": "^1.1.1",
-    "buffer-alloc-unsafe": "^1.0.0",
+    "codecs": "^1.2.0",
+    "hypercore": "^6.7.0",
     "hypercore-protocol": "^6.4.0",
+    "inherits": "^2.0.3",
     "mutexify": "^1.1.0",
-    "sodium-universal": "^1.0.0",
+    "protocol-buffers": "^3.2.1",
+    "random-access-file": "^1.8.1",
+    "sodium-universal": "^1.4.0",
     "thunky": "^1.0.2",
-    "to-buffer": "^1.1.0"
+    "to-buffer": "^1.1.0",
+    "unordered-array-remove": "^1.0.2",
+    "varint": "^5.0.0"
   },
   "devDependencies": {
-    "hypercore": "^6.3.6",
     "random-access-memory": "^2.4.0",
-    "run-series": "^1.1.4",
-    "standard": "^10.0.2",
-    "tape": "^4.6.3"
+    "standard": "^10.0.3",
+    "tape": "^4.8.0"
   },
   "scripts": {
-    "test": "standard && tape test.js"
+    "test": "standard && tape test/*.js"
   },
   "repository": {
     "type": "git",
@@ -31,5 +35,5 @@
   "bugs": {
     "url": "https://github.com/mafintosh/hyperdb/issues"
   },
-  "homepage": "https://github.com/mafintosh/hyperdb"
+  "homepage": "https://github.com/mafintosh/hyperdb#readme"
 }
