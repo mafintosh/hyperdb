@@ -2,7 +2,6 @@ var replicate = require('./helpers/replicate')
 var tape = require('tape')
 
 var hyperdb = require('..')
-var hypercore = require('hypercore')
 var ram = require('random-access-memory')
 
 tape('basic replication', function (t) {
@@ -202,20 +201,92 @@ tape('2 peers, fork and merge write', function (t) {
   })
 })
 
+tape('3 peers', function (t) {
+  t.plan(12)
+
+  createThree(function (a, b, c) {
+    c.put('/test', 'test', function () {
+      replicateThree(a, b, c, function () {
+        a.get('/test', ontest)
+        b.get('/test', ontest)
+        c.get('/test', ontest)
+
+        function ontest (err, nodes) {
+          t.error(err, 'no error')
+          t.same(nodes.length, 1)
+          t.same(nodes[0].key, '/test')
+          t.same(nodes[0].value, 'test')
+        }
+      })
+    })
+  })
+})
+
+tape('3 peers + fork', function (t) {
+  t.plan(18)
+
+  createThree(function (a, b, c) {
+    a.put('/test', 'a', function () {
+      c.put('/test', 'c', function () {
+        replicateThree(a, b, c, function () {
+          a.get('/test', ontest)
+          b.get('/test', ontest)
+          c.get('/test', ontest)
+
+          function ontest (err, nodes) {
+            nodes.sort(sort)
+            t.error(err, 'no error')
+            t.same(nodes.length, 2)
+            t.same(nodes[0].key, '/test')
+            t.same(nodes[0].value, 'a')
+            t.same(nodes[1].key, '/test')
+            t.same(nodes[1].value, 'c')
+          }
+        })
+      })
+    })
+  })
+})
+
 function sort (a, b) {
   return a.value.localeCompare(b.value)
 }
 
-function createTwo (cb) {
-  var a = hypercore(ram)
-  var b = hypercore(ram)
+function replicateThree (a, b, c, cb) {
+  replicate(b, c, function (err) {
+    if (err) return cb(err)
+    replicate(a, b, function (err) {
+      if (err) return cb(err)
+      replicate(b, c, cb)
+    })
+  })
+}
 
+function createTwo (cb) {
+  var a = hyperdb(ram, {valueEncoding: 'json'})
   a.ready(function () {
+    var b = hyperdb(ram, a.key, {valueEncoding: 'json'})
     b.ready(function () {
-      cb(
-        hyperdb({feeds: [a, hypercore(ram, b.key)], id: 0, valueEncoding: 'json'}),
-        hyperdb({feeds: [hypercore(ram, a.key), b], id: 1, valueEncoding: 'json'})
-      )
+      a.authorize(b.local.key, function () {
+        cb(a, b)
+      })
+    })
+  })
+}
+
+function createThree (cb) {
+  var a = hyperdb(ram, {valueEncoding: 'json'})
+  a.ready(function () {
+    var b = hyperdb(ram, a.key, {valueEncoding: 'json'})
+    b.ready(function () {
+      var c = hyperdb(ram, a.key, {valueEncoding: 'json'})
+      c.ready(function () {
+        a.authorize(b.local.key, function () {
+          b.authorize(c.local.key, function () {
+            cb(a, b, c)
+          })
+        })
+      })
     })
   })
 }

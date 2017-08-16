@@ -8,13 +8,18 @@
     "codecs": "^1.2.0",
     "hypercore": "^6.7.0",
     "hypercore-protocol": "^6.4.0",
+    "inherits": "^2.0.3",
     "mutexify": "^1.1.0",
-    "random-access-memory": "^2.4.0",
+    "protocol-buffers": "^3.2.1",
+    "random-access-file": "^1.8.1",
     "sodium-universal": "^1.4.0",
+    "thunky": "^1.0.2",
     "to-buffer": "^1.1.0",
-    "unordered-array-remove": "^1.0.2"
+    "unordered-array-remove": "^1.0.2",
+    "varint": "^5.0.0"
   },
   "devDependencies": {
+    "random-access-memory": "^2.4.0",
     "standard": "^10.0.3",
     "tape": "^4.8.0"
   },

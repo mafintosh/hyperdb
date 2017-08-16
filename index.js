@@ -2,53 +2,80 @@ var hash = require('./lib/hash')
 var writer = require('./lib/writer')
 var hypercore = require('hypercore')
 var remove = require('unordered-array-remove')
-var ram = require('random-access-memory')
+var raf = require('random-access-file')
 var mutexify = require('mutexify')
+var thunky = require('thunky')
 var codecs = require('codecs')
+var events = require('events')
+var inherits = require('inherits')
+var toBuffer = require('to-buffer')
 var protocol = null // lazy load on replicate
 
 module.exports = DB
 
-function DB (opts) {
-  if (!(this instanceof DB)) return new DB(opts)
-  if (!opts) opts = {}
+function DB (storage, key, opts) {
+  if (!(this instanceof DB)) return new DB(storage, key, opts)
+  events.EventEmitter.call(this)
 
-  // TODO: automatically determine local id in writer.js
-  this.id = opts.id || 0
-  this.writers = []
-  this.opened = false
-
-  this._codec = opts.valueEncoding ? codecs(opts.valueEncoding) : null
-  this._map = opts.map || null
-  this._reduce = opts.reduce || null
-  this._lock = mutexify() // unneeded once we support batching
-
-  // TODO: remove me and change to do the same multi feed does
-  if (opts.feed) opts.feeds = [opts.feed]
-  if (!opts.feeds) opts.feeds = [hypercore(ram)]
-  for (var i = 0; i < opts.feeds.length; i++) {
-    this.writers.push(writer(opts.feeds[i], i, this._codec))
+  if (isOptions(key)) {
+    opts = key
+    key = null
   }
 
-  this.ready() // call early
+  if (!opts) opts = {}
+
+  var self = this
+
+  this.key = key ? toBuffer(key, 'hex') : null
+  this.discoveryKey = null
+  this.local = null
+  this.source = null
+  this.opened = false
+  this.sparse = !!opts.sparse
+
+  this._codec = opts.valueEncoding ? codecs(opts.valueEncoding) : null
+  this._storage = typeof storage === 'string' ? fileStorage : storage
+  this._map = opts.map || null
+  this._reduce = opts.reduce || null
+  this._writers = []
+  this._lock = mutexify() // unneeded once we support batching
+  this._localWriter = null
+
+  this.ready = thunky(open)
+  this.ready()
+
+  function open (cb) {
+    self._open(cb)
+  }
+
+  function fileStorage (name) {
+    return raf(name, {directory: storage})
+  }
 }
+
+inherits(DB, events.EventEmitter)
 
 DB.prototype._heads = function (cb) {
   var result = []
-  var missing = this.writers.length
   var error = null
   var self = this
+  var missing = 0
+  var i = 0
 
-  if (!missing) return process.nextTick(cb, null, result)
+  this.ready(onready)
 
-  this.ready(function (err) {
+  function onready (err) {
     if (err) return cb(err)
-    for (var i = 0; i < self.writers.length; i++) {
-      self.writers[i].head(onhead)
-    }
-  })
 
-  function onhead (err, val) {
+    for (; i < self._writers.length; i++) {
+      missing++
+      self._writers[i].head(onhead)
+    }
+  }
+
+  function onhead (err, val, updated) {
+    if (updated) onready(null)
+
     if (err) error = err
     else if (val) result[val.feed] = val
     if (--missing) return
@@ -68,49 +95,56 @@ DB.prototype._heads = function (cb) {
   }
 }
 
-DB.prototype.authorize = function (key, id) {
-  var feed = hypercore(key, ram)
-  this.writers[id] = feed
-}
-
-DB.prototype.ready = function (cb) {
-  // needs to be thunkyfied if it does more than call .ready
-
-  if (!cb) cb = noop
-
-  var self = this
-  var missing = this.writers.length
-  var error = null
-
-  for (var i = 0; i < this.writers.length; i++) {
-    this.writers[i].feed.ready(onready)
-  }
-
-  function onready (err) {
-    if (err) error = err
-    if (--missing) return
-    if (!error) self.opened = true
-    cb(error)
-  }
+DB.prototype.authorize = function (key, cb) {
+  this._createWriter(key)
+  this.put('', '', cb)
 }
 
 DB.prototype.replicate = function (opts) {
   if (!protocol) protocol = require('hypercore-protocol')
   if (!opts) opts = {}
 
-  opts.expectedFeeds = this.writers.length
+  var len = this._writers.length
+  opts.expectedFeeds = len
 
   var self = this
   var stream = protocol(opts)
 
   opts.stream = stream
 
+  if (!opts.live) this._heads(noop)
   this.ready(function (err) {
     if (err) return stream.destroy(err)
     if (stream.destroyed) return
 
-    for (var i = 0; i < self.writers.length; i++) {
-      self.writers[i].feed.replicate(opts)
+    for (var i = 0; i < self._writers.length; i++) {
+      self._writers[i].feed.replicate(opts)
+    }
+
+    if (!opts.live) self.on('append', onappend)
+    self.on('_writer', onwriter)
+    stream.on('close', onclose)
+
+    function onclose () {
+      self.removeListener('_writer', onwriter)
+      self.removeListener('_writer', onwriter)
+    }
+
+    function onappend () {
+      // hack! make api in hypercore-protocol for this
+      if (stream.destroyed) return
+      stream.expectedFeeds += 1e9
+      self._heads(function () { // will reload new feeds
+        stream.expectedFeeds -= 1e9
+        stream.expectedFeeds += (self._writers.length - len)
+        len = self._writers.length
+        if (!stream.expectedFeeds) stream.finalize()
+      })
+    }
+
+    function onwriter (w) {
+      if (stream.destroyed) return
+      w.feed.replicate(opts)
     }
   })
 
@@ -130,22 +164,22 @@ DB.prototype.put = function (key, value, cb) {
 DB.prototype._put = function (key, value, cb) {
   if (!cb) cb = noop
 
-  var feed = this.id
   var self = this
   var path = hash(key, true)
 
   this._heads(function (err, h) {
     if (err) return cb(err)
 
+    var feed = self._localWriter.id
     var clock = []
     var i = 0
 
-    for (i = 0; i < self.writers.length; i++) {
-      clock.push(i === feed ? 0 : self.writers[i].feed.length)
+    for (i = 0; i < self._writers.length; i++) {
+      clock.push(i === feed ? 0 : self._writers[i].feed.length)
     }
 
     var node = {
-      seq: self.writers[feed].feed.length,
+      seq: self._writers[feed].feed.length,
       feed: feed,
       key: key,
       path: path,
@@ -155,7 +189,7 @@ DB.prototype._put = function (key, value, cb) {
     }
 
     if (!h.length) {
-      self.writers[feed].append(node, ondone)
+      self._writers[feed].append(node, ondone)
       return
     }
 
@@ -172,7 +206,7 @@ DB.prototype._put = function (key, value, cb) {
 
       if (error) return cb(err)
 
-      self.writers[feed].append(node, ondone)
+      self._writers[feed].append(node, ondone)
     }
 
     function ondone (err) {
@@ -214,7 +248,7 @@ DB.prototype.get = function (key, cb) {
 }
 
 DB.prototype._visitPut = function (key, path, i, j, k, node, heads, trie, cb) {
-  var writers = this.writers
+  var writers = this._writers
   var self = this
   var missing = 0
   var error = null
@@ -288,9 +322,81 @@ DB.prototype._visitPut = function (key, path, i, j, k, node, heads, trie, cb) {
   }
 }
 
+DB.prototype._open = function (cb) {
+  var self = this
+  var source = this._createFeed(this.key, 'source')
+
+  source.on('ready', function () {
+    self.source = source
+    self.key = source.key
+    self.discoveryKey = source.discoveryKey
+
+    var original = self._createWriterFromFeed(self.source)
+
+    if (source.writable) {
+      self.local = source
+      self._localWriter = original
+      return cb(null)
+    }
+
+    var local = self._createFeed(null, 'local')
+
+    local.on('ready', function () {
+      self.local = local
+      self._localWriter = self._createWriterFromFeed(self.local)
+      cb(null)
+    })
+  })
+}
+
+DB.prototype._createFeed = function (key, dir) {
+  if (!dir) {
+    dir = key.toString('hex')
+    dir = dir.slice(0, 2) + '/' + dir.slice(2)
+  }
+
+  var self = this
+  var feed = hypercore(storage, key, {sparse: this.sparse})
+
+  feed.on('error', onerror)
+  feed.on('append', onappend)
+
+  return feed
+
+  function onerror (err) {
+    self.emit('error', err)
+  }
+
+  function onappend () {
+    self.emit('append', this)
+  }
+
+  function storage (name) {
+    return self._storage(dir + '/' + name)
+  }
+}
+
+DB.prototype._createWriter = function (key, dir) {
+  for (var i = 0; i < this._writers.length; i++) {
+    var w = this._writers[i]
+    if (key && w.key.equals(key)) return w
+  }
+
+  return this._createWriterFromFeed(this._createFeed(key, dir))
+}
+
+DB.prototype._createWriterFromFeed = function (feed) {
+  var w = writer(this, feed, this._writers.length)
+
+  this._writers.push(w)
+  this.emit('_writer', w)
+
+  return w
+}
+
 DB.prototype._visitGet = function (key, path, i, node, heads, result, cb) {
   var self = this
-  var writers = this.writers
+  var writers = this._writers
   var missing = 0
   var error = null
   var trie = null
@@ -381,4 +487,8 @@ function noDup (list, val) {
     }
   }
   return true
+}
+
+function isOptions (opts) {
+  return !!(opts && typeof opts !== 'string' && !Buffer.isBuffer(opts))
 }
