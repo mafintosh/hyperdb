@@ -170,6 +170,8 @@ DB.prototype._put = function (key, value, cb) {
   this._heads(function (err, h) {
     if (err) return cb(err)
 
+    if (!self._localWriter) self._localWriter = self._createWriter(self.local.key, 'local')
+
     var feed = self._localWriter.id
     var clock = []
     var i = 0
@@ -331,11 +333,11 @@ DB.prototype._open = function (cb) {
     self.key = source.key
     self.discoveryKey = source.discoveryKey
 
-    var original = self._createWriterFromFeed(self.source)
+    var w = self._createWriter(self.key, 'source')
 
     if (source.writable) {
       self.local = source
-      self._localWriter = original
+      self._localWriter = w
       return cb(null)
     }
 
@@ -343,7 +345,6 @@ DB.prototype._open = function (cb) {
 
     local.on('ready', function () {
       self.local = local
-      self._localWriter = self._createWriterFromFeed(self.local)
       cb(null)
     })
   })
@@ -353,6 +354,11 @@ DB.prototype._createFeed = function (key, dir) {
   if (!dir) {
     dir = key.toString('hex')
     dir = dir.slice(0, 2) + '/' + dir.slice(2)
+  }
+
+  if (key) {
+    if (this.local && this.local.key && this.local.key.equals(key)) return this.local
+    if (this.source && this.source.key && this.source.key.equals(key)) return this.source
   }
 
   var self = this
@@ -382,16 +388,12 @@ DB.prototype._createWriter = function (key, dir) {
     if (key && w.key.equals(key)) return w
   }
 
-  return this._createWriterFromFeed(this._createFeed(key, dir))
-}
+  var res = writer(this, this._createFeed(key, dir), this._writers.length)
 
-DB.prototype._createWriterFromFeed = function (feed) {
-  var w = writer(this, feed, this._writers.length)
+  this._writers.push(res)
+  this.emit('_writer', res)
 
-  this._writers.push(w)
-  this.emit('_writer', w)
-
-  return w
+  return res
 }
 
 DB.prototype._visitGet = function (key, path, i, node, heads, result, cb) {
