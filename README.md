@@ -13,6 +13,22 @@ Latest release is the 1.0.0-rc1
 The storage format might change before a stable 1.0.0 release
 but the api semantics most likely wont
 
+## Usage
+
+``` js
+var hyperdb = require('hyperdb')
+
+var db = hyperdb('./my.db', {valueEncoding: 'utf-8'})
+
+db.put('/hello', 'world', function (err) {
+  if (err) throw err
+  db.get('/hello', function (err, nodes) {
+    if (err) throw err
+    console.log('/hello --> ' + nodes[0].value)
+  })
+})
+```
+
 ## API
 
 #### `var db = hyperdb(storage, [key], [options])`
