@@ -242,7 +242,7 @@ DB.prototype._visitPut = function (key, path, i, j, k, node, heads, trie, cb) {
           return
         }
 
-        if (noDup(vals, rval)) vals.push(rval)
+        if (isDuplicate(vals, rval)) vals.push(rval)
       }
       k = 0
     }
@@ -272,7 +272,7 @@ DB.prototype._visitPut = function (key, path, i, j, k, node, heads, trie, cb) {
   function onfilterdups (err, val) {
     if (err) return cb(err)
     var valPointer = {feed: val.feed, seq: val.seq}
-    if (val.key !== key && noDup(vals, valPointer)) vals.push(valPointer)
+    if (val.key !== key && isDuplicate(vals, valPointer)) vals.push(valPointer)
     self._visitPut(key, path, i, j, k + 1, node, heads, trie, cb)
   }
 
@@ -371,10 +371,10 @@ function isHead (node, heads) {
 }
 
 function pushMaybe (key, node, results) {
-  if (node.key === key && noDup(results, node)) results.push(node)
+  if (node.key === key && isDuplicate(results, node)) results.push(node)
 }
 
-function noDup (list, val) {
+function isDuplicate (list, val) {
   for (var i = 0; i < list.length; i++) {
     if (list[i].feed === val.feed && list[i].seq === val.seq) {
       return false
