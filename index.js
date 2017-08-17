@@ -62,7 +62,7 @@ function DB (storage, key, opts) {
 
 inherits(DB, events.EventEmitter)
 
-DB.prototype._heads = function (cb) {
+DB.prototype.heads = function (cb) {
   var result = []
   var error = null
   var self = this
@@ -119,7 +119,6 @@ DB.prototype.replicate = function (opts) {
 
   opts.stream = stream
 
-  if (!opts.live) this._heads(noop)
   this.ready(function (err) {
     if (err) return stream.destroy(err)
     if (stream.destroyed) return
@@ -128,8 +127,12 @@ DB.prototype.replicate = function (opts) {
       self._writers[i].feed.replicate(opts)
     }
 
-    if (!self.sparse) self.on('append', onappend)
     self.on('_writer', onwriter)
+    if (!self.sparse) {
+      onappend()
+      self.on('append', onappend)
+    }
+
     stream.on('close', onclose)
     stream.on('end', onclose)
 
@@ -175,7 +178,7 @@ DB.prototype._put = function (key, value, cb) {
   var self = this
   var path = hash(key, true)
 
-  this._heads(function (err, h) {
+  this.heads(function (err, heads) {
     if (err) return cb(err)
 
     if (!self._localWriter) self._localWriter = self._createWriter(self.local.key, 'local')
@@ -198,16 +201,16 @@ DB.prototype._put = function (key, value, cb) {
       trie: []
     }
 
-    if (!h.length) {
+    if (!heads.length) {
       self._localWriter.append(node, ondone)
       return
     }
 
-    var missing = h.length
+    var missing = heads.length
     var error = null
 
-    for (i = 0; i < h.length; i++) {
-      self._visitPut(key, path, 0, 0, 0, h[i], h, node.trie, onput)
+    for (i = 0; i < heads.length; i++) {
+      self._visitPut(key, path, 0, 0, 0, heads[i], heads, node.trie, onput)
     }
 
     function onput (err) {
@@ -226,20 +229,38 @@ DB.prototype._put = function (key, value, cb) {
   })
 }
 
+DB.prototype.path = function (key, cb) {
+  var path = []
+  this._get(key, null, onvisit, done)
+
+  function onvisit (node) {
+    path.push(node)
+    return true
+  }
+
+  function done (err) {
+    if (err) return cb(err)
+    cb(null, path)
+  }
+}
+
 DB.prototype.get = function (key, cb) {
+  this._get(key, [], ondefaultvisit, cb)
+}
+
+DB.prototype._get = function (key, result, visit, cb) {
   var path = hash(key, true)
-  var result = []
   var self = this
 
-  this._heads(function (err, h) {
+  this.heads(function (err, heads) {
     if (err) return cb(err)
-    if (!h.length) return cb(null, null)
+    if (!heads.length) return cb(null, null)
 
-    var missing = h.length
+    var missing = heads.length
     var error = null
 
-    for (var i = 0; i < h.length; i++) {
-      self._visitGet(key, path, 0, h[i], h, result, onget)
+    for (var i = 0; i < heads.length; i++) {
+      self._visitGet(key, path, 0, heads[i], heads, result, visit, onget)
     }
 
     function onget (err) {
@@ -247,7 +268,7 @@ DB.prototype.get = function (key, cb) {
       if (--missing) return
       if (error) return cb(error)
 
-      if (!result.length) return cb(null, null)
+      if (!result || !result.length) return cb(null, null)
 
       if (self._map) result = result.map(self._map)
       if (self._reduce) result = result.reduce(self._reduce)
@@ -429,13 +450,15 @@ DB.prototype._createWriter = function (key, dir) {
   return res
 }
 
-DB.prototype._visitGet = function (key, path, i, node, heads, result, cb) {
+DB.prototype._visitGet = function (key, path, i, node, heads, result, onvisit, cb) {
   var self = this
   var writers = this._writers
   var missing = 0
   var error = null
   var trie = null
   var vals = null
+
+  if (!onvisit(node)) return cb(null)
 
   for (; i < path.length; i++) {
     if (node.path[i] === path[i]) continue
@@ -463,7 +486,8 @@ DB.prototype._visitGet = function (key, path, i, node, heads, result, cb) {
   trie = node.trie[path.length - 1]
   vals = trie && trie[hash.TERMINATE]
 
-  pushMaybe(key, node, result)
+  // already visited node so passing null as visitor
+  pushMaybe(key, node, result, null)
 
   if (!vals || !vals.length) return cb(null)
 
@@ -476,14 +500,20 @@ DB.prototype._visitGet = function (key, path, i, node, heads, result, cb) {
 
   function onpush (err, val) {
     if (err) error = err
-    else pushMaybe(key, val, result)
+    else pushMaybe(key, val, result, onvisit)
     if (!--missing) cb(error)
   }
 
   function onval (err, val) {
     if (err) return done(err)
-    if (!updateHead(val, node, heads)) return done(null)
-    self._visitGet(key, path, i + 1, val, heads, result, done)
+
+    if (!updateHead(val, node, heads)) {
+      onvisit(val)
+      done(null)
+      return
+    }
+
+    self._visitGet(key, path, i + 1, val, heads, result, onvisit, done)
   }
 
   function done (err) {
@@ -493,6 +523,10 @@ DB.prototype._visitGet = function (key, path, i, node, heads, result, cb) {
 }
 
 function noop () {}
+
+function ondefaultvisit (node) {
+  return true
+}
 
 function updateHead (newNode, oldNode, heads) {
   var i = heads.indexOf(oldNode)
@@ -511,7 +545,8 @@ function isHead (node, heads) {
   return true
 }
 
-function pushMaybe (key, node, results) {
+function pushMaybe (key, node, results, onvisit) {
+  if (!results || (onvisit && !onvisit(node))) return
   if (node.key === key && noDup(results, node)) results.push(node)
 }
 
