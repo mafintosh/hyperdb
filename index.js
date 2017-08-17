@@ -40,9 +40,16 @@ function DB (storage, key, opts) {
   this._writers = []
   this._lock = mutexify() // unneeded once we support batching
   this._localWriter = null
+  this.setMaxListeners(0) // use ._streams array instead
 
   this.ready = thunky(open)
-  this.ready()
+  this.ready(onready)
+
+  function onready (err) {
+    self.opened = !err
+    if (err) self.emit('error', err)
+    else self.emit('ready')
+  }
 
   function open (cb) {
     self._open(cb)
@@ -96,7 +103,7 @@ DB.prototype._heads = function (cb) {
 }
 
 DB.prototype.authorize = function (key, cb) {
-  this._createWriter(key)
+  this._createWriter(toBuffer(key, 'hex'))
   this.put('', '', cb)
 }
 
@@ -121,12 +128,13 @@ DB.prototype.replicate = function (opts) {
       self._writers[i].feed.replicate(opts)
     }
 
-    if (!opts.live) self.on('append', onappend)
+    if (!self.sparse) self.on('append', onappend)
     self.on('_writer', onwriter)
     stream.on('close', onclose)
+    stream.on('end', onclose)
 
     function onclose () {
-      self.removeListener('_writer', onwriter)
+      self.removeListener('append', onappend)
       self.removeListener('_writer', onwriter)
     }
 
@@ -134,7 +142,7 @@ DB.prototype.replicate = function (opts) {
       // hack! make api in hypercore-protocol for this
       if (stream.destroyed) return
       stream.expectedFeeds += 1e9
-      self._heads(function () { // will reload new feeds
+      self._update(function () {
         stream.expectedFeeds -= 1e9
         stream.expectedFeeds += (self._writers.length - len)
         len = self._writers.length
@@ -338,22 +346,47 @@ DB.prototype._open = function (cb) {
     if (source.writable) {
       self.local = source
       self._localWriter = w
-      return cb(null)
+      return self._update(cb)
     }
 
     var local = self._createFeed(null, 'local')
 
     local.on('ready', function () {
       self.local = local
-      cb(null)
+      self._update(cb)
     })
   })
+}
+
+DB.prototype._update = function (cb) {
+  if (!cb) cb = noop
+
+  var self = this
+  var missing = this._writers.length
+  var error = null
+  var i = 0
+
+  for (; i < this._writers.length; i++) {
+    this._writers[i].head(done)
+  }
+
+  function done (err, head, updated) {
+    if (err) error = err
+
+    if (updated) {
+      for (; i < self._writers.length; i++) {
+        missing++
+        self._writers[i].head(done)
+      }
+    }
+    if (!--missing) cb(error)
+  }
 }
 
 DB.prototype._createFeed = function (key, dir) {
   if (!dir) {
     dir = key.toString('hex')
-    dir = dir.slice(0, 2) + '/' + dir.slice(2)
+    dir = 'peers/' + dir.slice(0, 2) + '/' + dir.slice(2)
   }
 
   if (key) {
