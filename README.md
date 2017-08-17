@@ -35,23 +35,33 @@ db.put('/hello', 'world', function (err) {
 
 Create a new hyperdb.
 
-Options include:
-
-``` js
-{
-  valueEncoding: 'json' | 'utf-8' | 'binary' | someEncoder, // defaults to binary
-  sparse: false
-}
+`storage` is a function that is called with every filename hyperdb needs to
+operate on. There are many providers for the
+[abstract-random-access](https://github.com/juliangruber/abstract-random-access)
+interface. e.g.
+```js
+   var ram = require('random-access-memory')
+   var feed = hyperdb(function (filename) {
+     // filename will be one of: data, bitfield, tree, signatures, key, secret_key
+     // the data file will contain all your data concattenated.
+   
+     // just store all files in ram by returning a random-access-memory instance
+     return ram()
+   })
 ```
+
+`key` is a `Buffer` containing the local feed's public key. If you do not set
+this the public key will be loaded from storage. If no key exists a new key pair
+will be generated.
 
 #### `db.on('ready')`
 
-Emitted when the db is fully ready and all static properties have been set.
-You do not need to wait for this when calling any async functions.
+Emitted exactly once: when the db is fully ready and all static properties have
+been set. You do not need to wait for this when calling any async functions.
 
 #### `db.on('error', err)`
 
-Emitted if there was a critical error before the is ready.
+Emitted if there was a critical error before `db` is ready.
 
 #### `db.put(key, value, [callback])`
 
@@ -59,8 +69,8 @@ Insert a new value. Will merge any previous values seen for this key.
 
 #### `db.get(key, callback)`
 
-Lookup a key. Returns a nodes array with the current values for this key.
-Is there is no current conflicts for this key the array will only contain a single node.
+Lookup a string `key`. Returns a nodes array with the current values for this key.
+If there is no current conflicts for this key the array will only contain a single node.
 
 #### `db.local`
 
@@ -71,7 +81,7 @@ writes replicate. The first person to create the hyperdb is the first owner.
 
 Authorize another peer to write to the hyperdb.
 
-To get another peer to authorize you you'd usually do something similar to this
+To get another peer to authorize you you'd usually do something like
 
 ``` js
 myDb.on('ready', function () {
