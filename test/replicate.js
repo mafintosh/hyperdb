@@ -248,6 +248,46 @@ tape('3 peers + fork', function (t) {
   })
 })
 
+tape('put before auth', function (t) {
+  t.plan(12)
+
+  var a = hyperdb(ram, {valueEncoding: 'json'})
+
+  a.ready(function () {
+    var b = hyperdb(ram, a.key, {valueEncoding: 'json'})
+
+    a.put('a', 'a', function () {
+      replicate(a, b, function () {
+        b.put('a', 'b', function () {
+          a.put('foo', 'bar', function () {
+            a.authorize(b.local.key, function () {
+              replicate(a, b, function () {
+                a.get('a', ona)
+                b.get('a', ona)
+                a.get('foo', onfoo)
+
+                function ona (err, nodes) {
+                  t.error(err, 'no error')
+                  t.same(nodes.length, 1)
+                  t.same(nodes[0].key, 'a')
+                  t.same(nodes[0].value, 'b')
+                }
+
+                function onfoo (err, nodes) {
+                  t.error(err, 'no error')
+                  t.same(nodes.length, 1)
+                  t.same(nodes[0].key, 'foo')
+                  t.same(nodes[0].value, 'bar')
+                }
+              })
+            })
+          })
+        })
+      })
+    })
+  })
+})
+
 function sort (a, b) {
   return a.value.localeCompare(b.value)
 }
