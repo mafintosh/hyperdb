@@ -44,7 +44,7 @@ interface. e.g.
    var feed = hyperdb(function (filename) {
      // filename will be one of: data, bitfield, tree, signatures, key, secret_key
      // the data file will contain all your data concattenated.
-   
+
      // just store all files in ram by returning a random-access-memory instance
      return ram()
    })
@@ -90,10 +90,20 @@ myDb.on('ready', function () {
 })
 ```
 
-#### `unwatch = db.watch(folder, onchange)`
+#### `unwatch = db.watch(folderOrKey, onchange)`
 
 Watch a folder and get notified anytime a key inside this folder
 has changed.
+
+``` js
+db.watch('/foo/bar', function () {
+  console.log('folder has changed')
+})
+
+...
+
+db.put('/foo/bar/baz', 'hi') // triggers the above
+```
 
 #### `var stream = db.replicate([options])`
 
