@@ -162,6 +162,59 @@ DB.prototype.replicate = function (opts) {
   return stream
 }
 
+DB.prototype.watch = function (key, onchange) {
+  var self = this
+  var prev = null
+
+  update()
+  this.on('append', update)
+
+  return function unwatch () {
+    onchange = noop
+    self.removeListener('append', update)
+  }
+
+  function update () {
+    self._closest(key, check)
+  }
+
+  function check (err, nodes) {
+    if (err) return onchange(err)
+
+    if (!prev) {
+      prev = nodes
+      return
+    }
+
+    var changed = nodes.length !== prev.length
+    for (var i = 0; i < nodes.length && !changed; i++) {
+      changed = nodes[i].feed !== prev[i].feed || nodes[i].seq !== prev[i].seq
+    }
+
+    prev = nodes
+    if (changed) onchange(null)
+  }
+}
+
+DB.prototype._closest = function (key, cb) {
+  var nodes = []
+  var len = hash(key).length
+
+  this._get(key, null, onvisit, done)
+
+  function onvisit (node, matchLength, head) {
+    if (!head) return
+    if (matchLength >= len && noDup(nodes, node)) {
+      nodes.push(node)
+    }
+  }
+
+  function done (err) {
+    if (err) return cb(err)
+    cb(null, nodes.sort(sortNodes))
+  }
+}
+
 DB.prototype.put = function (key, value, cb) {
   var self = this
 
@@ -235,7 +288,6 @@ DB.prototype.path = function (key, cb) {
 
   function onvisit (node) {
     path.push(node)
-    return true
   }
 
   function done (err) {
@@ -245,7 +297,7 @@ DB.prototype.path = function (key, cb) {
 }
 
 DB.prototype.get = function (key, cb) {
-  this._get(key, [], ondefaultvisit, cb)
+  this._get(key, [], noop, cb)
 }
 
 DB.prototype._get = function (key, result, visit, cb) {
@@ -458,10 +510,9 @@ DB.prototype._visitGet = function (key, path, i, node, heads, result, onvisit, c
   var trie = null
   var vals = null
 
-  if (!onvisit(node)) return cb(null)
-
   for (; i < path.length; i++) {
     if (node.path[i] === path[i]) continue
+    onvisit(node, i, true)
 
     // check trie
     trie = node.trie[i]
@@ -486,8 +537,7 @@ DB.prototype._visitGet = function (key, path, i, node, heads, result, onvisit, c
   trie = node.trie[path.length - 1]
   vals = trie && trie[hash.TERMINATE]
 
-  // already visited node so passing null as visitor
-  pushMaybe(key, node, result, null)
+  pushMaybe(key, node, result, onvisit)
 
   if (!vals || !vals.length) return cb(null)
 
@@ -508,7 +558,7 @@ DB.prototype._visitGet = function (key, path, i, node, heads, result, onvisit, c
     if (err) return done(err)
 
     if (!updateHead(val, node, heads)) {
-      onvisit(val)
+      onvisit(val, i, false)
       done(null)
       return
     }
@@ -523,10 +573,6 @@ DB.prototype._visitGet = function (key, path, i, node, heads, result, onvisit, c
 }
 
 function noop () {}
-
-function ondefaultvisit (node) {
-  return true
-}
 
 function updateHead (newNode, oldNode, heads) {
   var i = heads.indexOf(oldNode)
@@ -546,8 +592,8 @@ function isHead (node, heads) {
 }
 
 function pushMaybe (key, node, results, onvisit) {
-  if (!results || (onvisit && !onvisit(node))) return
-  if (node.key === key && noDup(results, node)) results.push(node)
+  onvisit(node, node.path.length, true)
+  if (results && node.key === key && noDup(results, node)) results.push(node)
 }
 
 function noDup (list, val) {
@@ -561,4 +607,9 @@ function noDup (list, val) {
 
 function isOptions (opts) {
   return !!(opts && typeof opts !== 'string' && !Buffer.isBuffer(opts))
+}
+
+function sortNodes (a, b) {
+  if (a.feed === b.feed) return a.seq - b.seq
+  return a.feed - b.feed
 }
