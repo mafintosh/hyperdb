@@ -80,6 +80,11 @@ myDb.on('ready', function () {
 })
 ```
 
+#### `unwatch = db.watch(folder, onchange)`
+
+Watch a folder and get notified anytime a key inside this folder
+has changed.
+
 #### `var stream = db.replicate([options])`
 
 Create a replication stream. Options include:
