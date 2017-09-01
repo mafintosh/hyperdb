@@ -1,14 +1,26 @@
 var tape = require('tape')
 var create = require('./helpers/create')
 
-function collect (stream, cb) {
-  var res = []
-  stream.on('data', res.push.bind(res))
-  stream.once('error', cb)
-  stream.once('end', cb.bind(null, null, res))
-}
+tape('new value', function (t) {
+  var db = create.one()
 
-tape('basic put/get', function (t) {
+  var expected = [
+    { type: 'put', name: '/a', value: '2' }
+  ]
+
+  db.checkout(function (err, co) {
+    db.put('/a', '2', function (err) {
+      t.error(err, 'no error')
+      var rs = db.createDiffStream(co, '/a')
+      collect(rs, function (err, actual) {
+        t.deepEqual(actual, expected, 'diff as expected')
+        t.end()
+      })
+    })
+  })
+})
+
+tape('updated value', function (t) {
   var db = create.one()
 
   var expected = [
@@ -35,3 +47,10 @@ tape('basic put/get', function (t) {
     })
   })
 })
+
+function collect (stream, cb) {
+  var res = []
+  stream.on('data', res.push.bind(res))
+  stream.once('error', cb)
+  stream.once('end', cb.bind(null, null, res))
+}
