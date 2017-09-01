@@ -706,45 +706,45 @@ DB.prototype.checkout = function (cb) {
   })
 }
 
-DB.prototype._visitDiff = function (key, path, node, initial, result, onvisit, halt, cb) {
+DB.prototype._visitDiff = function (key, path, node, head, checkout, onvisit, halt, cb) {
   var self = this
   var missing = 0
 
+  // We've traveled past 'checkout' -- bail.
   if (halt[node.feed] && halt[node.feed] > node.seq) {
     console.log('bailing at', node)
     return cb()
   }
 
-  // console.log(path, node.path)
-  // console.log(node.trie)
+  // Check if this node matches the desired prefix.
   for (var i = 0; i < path.length && path[i] !== hash.TERMINATE; i++) {
     if (path[i] !== node.path[i]) return onMismatch()
   }
-
   console.log('full prefix match', node.key)
-  if (!initial[node.key]) {
-    console.log('STREAM PUSH', node.key, node.value)
-    initial[node.key] = node
-  } else if (initial[node.key].feed !== node.feed || initial[node.key].seq !== node.seq) {
-    result[node.key] = node
-  } else {
-    console.log('deduped', node.key)
-    console.log(initial[node.key], node)
-  }
-  // console.dir(node.trie[i], {depth:null})
 
+  // Mark this match as either the first time we've seen it (head), an older
+  // value of this key we're still tracking backwards in time (checkout), or a
+  // duplicate that we've already procesed (deduped).
+  if (!head[node.key]) {
+    head[node.key] = node
+  } else if (head[node.key].feed === node.feed && head[node.key].seq === node.seq) {
+    console.log('deduped', node.key)
+    console.log(head[node.key], node)
+  } else {
+    checkout[node.key] = node
+  }
+
+  // Traverse the node's entire trie, recursively, hunting for more nodes with
+  // the desired prefix.
   var trie = node.trie[i]
   for (var i = 0; trie && i < trie.length; i++) {
     var entrySet = trie[i]
     for (var j = 0; entrySet && j < entrySet.length; j++) {
       var entry = entrySet[j]
-      console.log('entry', entry)
       missing++
       self._writers[entry.feed].get(entry.seq, function (err, node) {
-        console.log('next node', node.key)
-        self._visitDiff(key, path, node, initial, result, onvisit, halt, function () {
+        self._visitDiff(key, path, node, head, checkout, onvisit, halt, function () {
           // TODO: handle error
-          console.log('m', missing)
           if (!--missing) fin(null)
         })
       })
@@ -752,21 +752,21 @@ DB.prototype._visitDiff = function (key, path, node, initial, result, onvisit, h
   }
 
   function onMismatch () {
-    console.log('mismatch', i)
-    console.log('m', missing)
+    console.log('mismatch', i, missing)
     if (!--missing) fin(null)
   }
 
   if (!missing) fin(null)
 
+  // Finalize the results by taking a diff of 'head' and 'checkout'.
   function fin () {
     var a = {}
-    Object.keys(initial).map(function (k) {
-      a[k] = initial[k].value
+    Object.keys(head).map(function (k) {
+      a[k] = head[k].value
     })
     var b = {}
-    Object.keys(result).map(function (k) {
-      b[k] = result[k].value
+    Object.keys(checkout).map(function (k) {
+      b[k] = checkout[k].value
     })
     console.log('head', a)
     console.log('checkout', b)
