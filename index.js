@@ -679,7 +679,7 @@ DB.prototype.createDiffStream = function (checkout, key) {
     if (!heads.length) return cb(null, null)
 
     for (var i = 0; i < heads.length; i++) {
-      self._visitDiff(key, path, heads[i], result, visit, checkout, onget)
+      self._visitDiff(key, path, heads[i], {}, {}, visit, checkout, onget)
     }
   })
 
@@ -706,23 +706,31 @@ DB.prototype.checkout = function (cb) {
   })
 }
 
-DB.prototype._visitDiff = function (key, path, node, result, onvisit, halt, cb) {
+DB.prototype._visitDiff = function (key, path, node, initial, result, onvisit, halt, cb) {
   var self = this
   var missing = 0
 
-  if (halt[node.feed] && halt[node.feed] >= node.seq) {
+  if (halt[node.feed] && halt[node.feed] > node.seq) {
     console.log('bailing at', node)
     return cb()
   }
 
   // console.log(path, node.path)
-  console.log(node.trie)
+  // console.log(node.trie)
   for (var i = 0; i < path.length && path[i] !== hash.TERMINATE; i++) {
     if (path[i] !== node.path[i]) return onMismatch()
   }
 
   console.log('full prefix match', node.key)
-  result[node.key] = node.value
+  if (!initial[node.key]) {
+    console.log('STREAM PUSH', node.key, node.value)
+    initial[node.key] = node
+  } else if (initial[node.key].feed !== node.feed || initial[node.key].seq !== node.seq) {
+    result[node.key] = node
+  } else {
+    console.log('deduped', node.key)
+    console.log(initial[node.key], node)
+  }
   // console.dir(node.trie[i], {depth:null})
 
   var trie = node.trie[i]
@@ -734,10 +742,10 @@ DB.prototype._visitDiff = function (key, path, node, result, onvisit, halt, cb) 
       missing++
       self._writers[entry.feed].get(entry.seq, function (err, node) {
         console.log('next node', node.key)
-        self._visitDiff(key, path, node, result, onvisit, halt, function () {
+        self._visitDiff(key, path, node, initial, result, onvisit, halt, function () {
           // TODO: handle error
           console.log('m', missing)
-          if (!--missing) cb(null)
+          if (!--missing) fin(null)
         })
       })
     }
@@ -746,10 +754,23 @@ DB.prototype._visitDiff = function (key, path, node, result, onvisit, halt, cb) 
   function onMismatch () {
     console.log('mismatch', i)
     console.log('m', missing)
-    if (!--missing) cb(null)
+    if (!--missing) fin(null)
   }
 
-  if (!missing) cb(null)
+  if (!missing) fin(null)
+
+  function fin () {
+    var a = {}
+    Object.keys(initial).map(function (k) {
+      a[k] = initial[k].value
+    })
+    var b = {}
+    Object.keys(result).map(function (k) {
+      b[k] = result[k].value
+    })
+    console.log('head', a)
+    console.log('checkout', b)
+  }
 }
 
 function noop () {}
