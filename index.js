@@ -659,6 +659,99 @@ DB.prototype._visitGet = function (key, path, i, node, heads, result, onvisit, c
   }
 }
 
+// Return a Readable stream of changes to a hyperdb since 'checkout', an array
+// of { feed: id, seq: Number}.
+// If 'key' is provided, only diff entries with a prefix of 'key' will be
+// included.
+//
+// For now, this is NOT a live stream. History at call-time is compared against
+// 'checkout'.
+DB.prototype.createDiffStream = function (checkout, key) {
+  // Q: how do traverse all keys recursively?
+  // A: I think I need to just read ALL entries since checkout from all writers
+
+  var self = this
+  var path = hash(key, true)
+  var result = {}
+
+  this.heads(function (err, heads) {
+    if (err) return cb(err)
+    if (!heads.length) return cb(null, null)
+
+    for (var i = 0; i < heads.length; i++) {
+      self._visitDiff(key, path, heads[i], result, visit, checkout, onget)
+    }
+  })
+
+  function visit (node, idx, bool) {
+    console.log('visit', node.key)
+  }
+
+  function onget () {
+    console.log('onget', result)
+  }
+}
+
+DB.prototype.checkout = function (cb) {
+  this.heads(function (err, heads) {
+    if (err) return cb(err)
+    if (!heads.length) return cb(null, null)
+
+    var result = {}
+    for (var i = 0; i < heads.length; i++) {
+      result[heads[i].feed] = heads[i].seq
+    }
+
+    cb(null, result)
+  })
+}
+
+DB.prototype._visitDiff = function (key, path, node, result, onvisit, halt, cb) {
+  var self = this
+  var missing = 0
+
+  if (halt[node.feed] && halt[node.feed] >= node.seq) {
+    console.log('bailing at', node)
+    return cb()
+  }
+
+  // console.log(path, node.path)
+  console.log(node.trie)
+  for (var i = 0; i < path.length && path[i] !== hash.TERMINATE; i++) {
+    if (path[i] !== node.path[i]) return onMismatch()
+  }
+
+  console.log('full prefix match', node.key)
+  result[node.key] = node.value
+  // console.dir(node.trie[i], {depth:null})
+
+  var trie = node.trie[i]
+  for (var i = 0; trie && i < trie.length; i++) {
+    var entrySet = trie[i]
+    for (var j = 0; entrySet && j < entrySet.length; j++) {
+      var entry = entrySet[j]
+      console.log('entry', entry)
+      missing++
+      self._writers[entry.feed].get(entry.seq, function (err, node) {
+        console.log('next node', node.key)
+        self._visitDiff(key, path, node, result, onvisit, halt, function () {
+          // TODO: handle error
+          console.log('m', missing)
+          if (!--missing) cb(null)
+        })
+      })
+    }
+  }
+
+  function onMismatch () {
+    console.log('mismatch', i)
+    console.log('m', missing)
+    if (!--missing) cb(null)
+  }
+
+  if (!missing) cb(null)
+}
+
 function noop () {}
 
 function updateHead (newNode, oldNode, heads) {
