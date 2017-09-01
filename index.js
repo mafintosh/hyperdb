@@ -9,6 +9,7 @@ var codecs = require('codecs')
 var events = require('events')
 var inherits = require('inherits')
 var toBuffer = require('to-buffer')
+var Readable = require('stream').Readable
 var protocol = null // lazy load on replicate
 
 module.exports = DB
@@ -667,6 +668,9 @@ DB.prototype._visitGet = function (key, path, i, node, heads, result, onvisit, c
 // For now, this is NOT a live stream. History at call-time is compared against
 // 'checkout'.
 DB.prototype.createDiffStream = function (checkout, key) {
+  var stream = new Readable({objectMode: true})
+  stream._read = noop
+
   var self = this
   var path = hash(key, true)
 
@@ -675,9 +679,19 @@ DB.prototype.createDiffStream = function (checkout, key) {
     if (!heads.length) return cb(null, null)
 
     for (var i = 0; i < heads.length; i++) {
-      self._visitDiff(key, path, heads[i], {}, {}, checkout, noop)
+      self._visitDiff(key, path, heads[i], {}, {}, checkout, onDone)
     }
   })
+
+  function onDone (err, result) {
+    if (err) return cb(err)
+    for (var i = 0; i < result.length; i++) {
+      stream.push(result[i])
+    }
+    stream.push(null)
+  }
+
+  return stream
 }
 
 DB.prototype.checkout = function (cb) {
@@ -748,7 +762,7 @@ DB.prototype._visitDiff = function (key, path, node, head, checkout, halt, cb) {
 
   // Finalize the results by taking a diff of 'head' and 'checkout'.
   function fin () {
-    console.log(diffNodeSets(head, checkout))
+    cb(null, diffNodeSets(head, checkout))
   }
 }
 
