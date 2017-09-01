@@ -714,7 +714,6 @@ DB.prototype._visitDiff = function (key, path, node, head, checkout, halt, cb) {
 
   // We've traveled past 'checkout' -- bail.
   if (halt[node.feed] && halt[node.feed] > node.seq) {
-    console.log('bailing at', node)
     return cb()
   }
 
@@ -722,17 +721,13 @@ DB.prototype._visitDiff = function (key, path, node, head, checkout, halt, cb) {
   for (var i = 0; i < path.length && path[i] !== hash.TERMINATE; i++) {
     if (path[i] !== node.path[i]) return onMismatch()
   }
-  console.log('full prefix match', node.key)
 
   // Mark this match as either the first time we've seen it (head), an older
   // value of this key we're still tracking backwards in time (checkout), or a
   // duplicate that we've already procesed (deduped).
   if (!head[node.key]) {
     head[node.key] = node
-  } else if (head[node.key].feed === node.feed && head[node.key].seq === node.seq) {
-    console.log('deduped', node.key)
-    console.log(head[node.key], node)
-  } else {
+  } else if (head[node.key].feed !== node.feed || head[node.key].seq !== node.seq) {
     checkout[node.key] = node
   }
 
@@ -754,7 +749,6 @@ DB.prototype._visitDiff = function (key, path, node, head, checkout, halt, cb) {
   }
 
   function onMismatch () {
-    console.log('mismatch', i, missing)
     if (!--missing) fin(null)
   }
 
