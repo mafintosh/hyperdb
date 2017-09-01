@@ -770,10 +770,26 @@ DB.prototype._visitDiff = function (key, path, node, initial, result, onvisit, h
     })
     console.log('head', a)
     console.log('checkout', b)
+    console.log(diffShallowObjects(a, b))
   }
 }
 
 function noop () {}
+
+function diffShallowObjects (a, b) {
+  var ak = Object.keys(a)
+  var bk = Object.keys(b)
+  var result = []
+  for (var i = 0; i < ak.length; i++) {
+    if (a[ak[i]] && b[ak[i]]) {
+      result.push({ type: 'del', name: ak[i], value: b[ak[i]] })
+      result.push({ type: 'put', name: ak[i], value: a[ak[i]] })
+    } else if (a[ak[i]] && !b[ak[i]]) {
+      result.push({ type: 'put', name: ak[i], value: a[ak[i]] })
+    }
+  }
+  return result
+}
 
 function updateHead (newNode, oldNode, heads) {
   var i = heads.indexOf(oldNode)
