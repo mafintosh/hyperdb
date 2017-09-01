@@ -667,29 +667,17 @@ DB.prototype._visitGet = function (key, path, i, node, heads, result, onvisit, c
 // For now, this is NOT a live stream. History at call-time is compared against
 // 'checkout'.
 DB.prototype.createDiffStream = function (checkout, key) {
-  // Q: how do traverse all keys recursively?
-  // A: I think I need to just read ALL entries since checkout from all writers
-
   var self = this
   var path = hash(key, true)
-  var result = {}
 
   this.heads(function (err, heads) {
     if (err) return cb(err)
     if (!heads.length) return cb(null, null)
 
     for (var i = 0; i < heads.length; i++) {
-      self._visitDiff(key, path, heads[i], {}, {}, visit, checkout, onget)
+      self._visitDiff(key, path, heads[i], {}, {}, checkout, noop)
     }
   })
-
-  function visit (node, idx, bool) {
-    console.log('visit', node.key)
-  }
-
-  function onget () {
-    console.log('onget', result)
-  }
 }
 
 DB.prototype.checkout = function (cb) {
@@ -706,7 +694,7 @@ DB.prototype.checkout = function (cb) {
   })
 }
 
-DB.prototype._visitDiff = function (key, path, node, head, checkout, onvisit, halt, cb) {
+DB.prototype._visitDiff = function (key, path, node, head, checkout, halt, cb) {
   var self = this
   var missing = 0
 
@@ -743,7 +731,7 @@ DB.prototype._visitDiff = function (key, path, node, head, checkout, onvisit, ha
       var entry = entrySet[j]
       missing++
       self._writers[entry.feed].get(entry.seq, function (err, node) {
-        self._visitDiff(key, path, node, head, checkout, onvisit, halt, function () {
+        self._visitDiff(key, path, node, head, checkout, halt, function () {
           // TODO: handle error
           if (!--missing) fin(null)
         })
