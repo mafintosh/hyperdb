@@ -748,32 +748,21 @@ DB.prototype._visitDiff = function (key, path, node, head, checkout, halt, cb) {
 
   // Finalize the results by taking a diff of 'head' and 'checkout'.
   function fin () {
-    var a = {}
-    Object.keys(head).map(function (k) {
-      a[k] = head[k].value
-    })
-    var b = {}
-    Object.keys(checkout).map(function (k) {
-      b[k] = checkout[k].value
-    })
-    console.log('head', a)
-    console.log('checkout', b)
-    console.log(diffShallowObjects(a, b))
+    console.log(diffNodeSets(head, checkout))
   }
 }
 
 function noop () {}
 
-function diffShallowObjects (a, b) {
+function diffNodeSets (a, b) {
   var ak = Object.keys(a)
-  var bk = Object.keys(b)
   var result = []
   for (var i = 0; i < ak.length; i++) {
     if (a[ak[i]] && b[ak[i]]) {
-      result.push({ type: 'del', name: ak[i], value: b[ak[i]] })
-      result.push({ type: 'put', name: ak[i], value: a[ak[i]] })
+      result.push({ type: 'del', name: ak[i], value: b[ak[i]].value })
+      result.push({ type: 'put', name: ak[i], value: a[ak[i]].value })
     } else if (a[ak[i]] && !b[ak[i]]) {
-      result.push({ type: 'put', name: ak[i], value: a[ak[i]] })
+      result.push({ type: 'put', name: ak[i], value: a[ak[i]].value })
     }
   }
   return result
