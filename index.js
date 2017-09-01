@@ -697,7 +697,7 @@ DB.prototype.createDiffStream = function (checkout, key) {
 DB.prototype.checkout = function (cb) {
   this.heads(function (err, heads) {
     if (err) return cb(err)
-    if (!heads.length) return cb(null, null)
+    if (!heads.length) return cb(null, [])
 
     var result = {}
     for (var i = 0; i < heads.length; i++) {
