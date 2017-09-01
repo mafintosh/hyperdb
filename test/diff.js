@@ -1,6 +1,23 @@
 var tape = require('tape')
 var create = require('./helpers/create')
 
+tape('implicit checkout', function (t) {
+  var db = create.one()
+
+  var expected = [
+    { type: 'put', name: '/a', value: '2' }
+  ]
+
+  db.put('/a', '2', function (err) {
+    t.error(err, 'no error')
+    var rs = db.createDiffStream('/a')
+    collect(rs, function (err, actual) {
+      t.deepEqual(actual, expected, 'diff as expected')
+      t.end()
+    })
+  })
+})
+
 tape('new value', function (t) {
   var db = create.one()
 
@@ -11,7 +28,7 @@ tape('new value', function (t) {
   db.checkout(function (err, co) {
     db.put('/a', '2', function (err) {
       t.error(err, 'no error')
-      var rs = db.createDiffStream(co, '/a')
+      var rs = db.createDiffStream('/a', co)
       collect(rs, function (err, actual) {
         t.deepEqual(actual, expected, 'diff as expected')
         t.end()
@@ -37,7 +54,7 @@ tape('updated value', function (t) {
         t.error(err, 'no error')
         db.put('/a/d/r', '3', function (err) {
           t.error(err, 'no error')
-          var rs = db.createDiffStream(co, '/a')
+          var rs = db.createDiffStream('/a', co)
           collect(rs, function (err, actual) {
             t.deepEqual(actual, expected, 'diff as expected')
             t.end()

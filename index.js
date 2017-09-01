@@ -667,7 +667,10 @@ DB.prototype._visitGet = function (key, path, i, node, heads, result, onvisit, c
 //
 // For now, this is NOT a live stream. History at call-time is compared against
 // 'checkout'.
-DB.prototype.createDiffStream = function (checkout, key) {
+DB.prototype.createDiffStream = function (key, checkout) {
+  // Diff from the beginning
+  if (!checkout) checkout = []
+
   var stream = new Readable({objectMode: true})
   stream._read = noop
 
