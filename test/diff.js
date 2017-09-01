@@ -37,28 +37,51 @@ tape('new value', function (t) {
   })
 })
 
-tape('updated value', function (t) {
+tape('untracked value', function (t) {
   var db = create.one()
 
   var expected = [
-    { type: 'del', name: '/a/d/r', value: '1' },
-    { type: 'put', name: '/a/d/r', value: '3' },
+    { type: 'del', name: '/a', value: '1' },
     { type: 'put', name: '/a', value: '2' }
   ]
 
-  db.put('/a/d/r', '1', function (err) {
+  db.put('/a', '1', function (err) {
     t.error(err, 'no error')
     db.checkout(function (err, co) {
       t.error(err, 'no error')
       db.put('/a', '2', function (err) {
         t.error(err, 'no error')
-        db.put('/a/d/r', '3', function (err) {
+        db.put('/b', '17', function (err) {
           t.error(err, 'no error')
           var rs = db.createDiffStream('/a', co)
           collect(rs, function (err, actual) {
             t.deepEqual(actual, expected, 'diff as expected')
             t.end()
           })
+        })
+      })
+    })
+  })
+})
+
+tape('updated value', function (t) {
+  var db = create.one()
+
+  var expected = [
+    { type: 'del', name: '/a/d/r', value: '1' },
+    { type: 'put', name: '/a/d/r', value: '3' }
+  ]
+
+  db.put('/a/d/r', '1', function (err) {
+    t.error(err, 'no error')
+    db.checkout(function (err, co) {
+      t.error(err, 'no error')
+      db.put('/a/d/r', '3', function (err) {
+        t.error(err, 'no error')
+        var rs = db.createDiffStream('/a', co)
+        collect(rs, function (err, actual) {
+          t.deepEqual(actual, expected, 'diff as expected')
+          t.end()
         })
       })
     })

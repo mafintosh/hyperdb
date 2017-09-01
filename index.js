@@ -662,14 +662,13 @@ DB.prototype._visitGet = function (key, path, i, node, heads, result, onvisit, c
 
 // Return a Readable stream of changes to a hyperdb since 'checkout', an array
 // of { feed: id, seq: Number}.
-// If 'key' is provided, only diff entries with a prefix of 'key' will be
-// included.
+//
+// If 'checkout' is not provided, the beginning of history is compared against.
 //
 // For now, this is NOT a live stream. History at call-time is compared against
 // 'checkout'.
 DB.prototype.createDiffStream = function (key, checkout) {
-  // Diff from the beginning
-  if (!checkout) checkout = []
+  if (!checkout) checkout = []  // Diff from the beginning
 
   var stream = new Readable({objectMode: true})
   stream._read = noop
