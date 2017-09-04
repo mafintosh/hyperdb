@@ -472,8 +472,33 @@ DB.prototype._createFeed = function (key, dir) {
 
   feed.on('error', onerror)
   feed.on('append', onappend)
+  feed.on('download', ondownload)
+  feed.on('upload', onupload)
+  feed.on('remote-add', onremoteadd)
+  feed.on('remote-update', onremoteupdate)
+  feed.on('remote-remove', onremoteremove)
 
   return feed
+
+  function onupload (index, data) {
+    self.emit('upload', this, index, data)
+  }
+
+  function ondownload (index, data) {
+    self.emit('download', this, index, data)
+  }
+
+  function onremoteupdate (peer) {
+    self.emit('remote-update', this, peer)
+  }
+
+  function onremoteadd (peer) {
+    self.emit('remote-add', this, peer)
+  }
+
+  function onremoteremove (peer) {
+    self.emit('remote-remove', this, peer)
+  }
 
   function onerror (err) {
     self.emit('error', err)
