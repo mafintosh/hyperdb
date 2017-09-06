@@ -673,22 +673,58 @@ DB.prototype.createDiffStream = function (key, checkout) {
   var stream = new Readable({objectMode: true})
   stream._read = noop
 
+  function cb (err) {
+    stream.emit('error', err)
+  }
+
   var self = this
   var path = hash(key, true)
+  var missing = 1
 
+  // 1: Walk the trie starting at the head of all logs
   this.heads(function (err, heads) {
     if (err) return cb(err)
+    missing--
     if (!heads.length) return cb(null, null)
 
     for (var i = 0; i < heads.length; i++) {
+      missing++
       self._visitTrie(key, path, heads[i], {}, {}, checkout, onDone)
     }
   })
 
-  function onDone (err, result) {
+  // 2: Walk the trie starting at CHECKOUT
+  for (var i = 0; checkout && i < Object.keys(checkout).length; i++) {
+    var elm = checkout[i]
+    missing++
+    self._writers[i].get(elm, function (err, node) {
+      if (err) return cb(err)
+      self._visitTrie(key, path, node, {}, {}, null, onDone2)
+    })
+  }
+
+  var a, b
+
+  function onDone2 (err, result) {
+    // console.log('res2', result)
     if (err) return cb(err)
-    for (var i = 0; i < result.length; i++) {
-      stream.push(result[i])
+    b = result
+    if (!--missing) onAllDone()
+  }
+
+  function onDone (err, result) {
+    // console.log('res1', result)
+    if (err) return cb(err)
+    a = result
+    if (!--missing) onAllDone()
+  }
+
+  function onAllDone () {
+    a = a || {}
+    b = b || {}
+    var diff = diffNodeSets(a, b)
+    for (var i = 0; i < diff.length; i++) {
+      stream.push(diff[i])
     }
     stream.push(null)
   }
@@ -715,22 +751,28 @@ DB.prototype._visitTrie = function (key, path, node, head, checkout, halt, cb) {
   var missing = 0
 
   // We've traveled past 'checkout' -- bail.
-  if (halt[node.feed] && halt[node.feed] > node.seq) {
+  if (halt && halt[node.feed] && halt[node.feed] > node.seq) {
     return cb()
   }
 
   // Check if this node matches the desired prefix.
+  var prefixMatch = true
   for (var i = 0; i < path.length && path[i] !== hash.TERMINATE; i++) {
-    if (path[i] !== node.path[i]) return onMismatch()
+    if (path[i] !== node.path[i]) {
+      prefixMatch = false
+      break
+    }
   }
 
-  // Mark this match as either the first time we've seen it (head), an older
-  // value of this key we're still tracking backwards in time (checkout), or a
-  // duplicate that we've already procesed (deduped).
-  if (!head[node.key]) {
-    head[node.key] = node
-  } else if (head[node.key].feed !== node.feed || head[node.key].seq !== node.seq) {
-    checkout[node.key] = node
+  if (prefixMatch) {
+    // Mark this match as either the first time we've seen it (head), an older
+    // value of this key we're still tracking backwards in time (checkout), or a
+    // duplicate that we've already procesed (deduped).
+    if (!head[node.key]) {
+      head[node.key] = node
+    } else if (head[node.key].feed !== node.feed || head[node.key].seq !== node.seq) {
+      checkout[node.key] = node
+    }
   }
 
   // Traverse the node's entire trie, recursively, hunting for more nodes with
@@ -758,7 +800,7 @@ DB.prototype._visitTrie = function (key, path, node, head, checkout, halt, cb) {
 
   // Finalize the results by taking a diff of 'head' and 'checkout'.
   function fin () {
-    cb(null, diffNodeSets(head, checkout))
+    cb(null, head)
   }
 }
 

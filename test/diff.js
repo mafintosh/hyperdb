@@ -88,6 +88,8 @@ tape('updated value', function (t) {
   })
 })
 
+// TODO: multiple feeds
+
 function collect (stream, cb) {
   var res = []
   stream.on('data', res.push.bind(res))
