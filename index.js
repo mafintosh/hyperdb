@@ -40,6 +40,7 @@ function DB (storage, key, opts) {
   this._writers = []
   this._lock = mutexify() // unneeded once we support batching
   this._localWriter = null
+  this._updates = 0
   this.setMaxListeners(0) // use ._streams array instead
 
   this.ready = thunky(open)
@@ -200,7 +201,7 @@ DB.prototype._closest = function (key, cb) {
   var nodes = []
   var len = hash(key).length
 
-  this._get(key, null, onvisit, done)
+  this._get(key, false, null, onvisit, done)
 
   function onvisit (node, matchLength, head) {
     if (!head) return
@@ -284,7 +285,7 @@ DB.prototype._put = function (key, value, cb) {
 
 DB.prototype.path = function (key, cb) {
   var path = []
-  this._get(key, null, onvisit, done)
+  this._get(key, false, null, onvisit, done)
 
   function onvisit (node) {
     path.push(node)
@@ -296,17 +297,23 @@ DB.prototype.path = function (key, cb) {
   }
 }
 
-DB.prototype.get = function (key, cb) {
-  this._get(key, [], noop, cb)
+DB.prototype.get = function (key, opts, cb) {
+  if (typeof opts === 'function') return this.get(key, null, opts)
+  this._get(key, !!(opts && opts.wait), [], noop, cb)
 }
 
-DB.prototype._get = function (key, result, visit, cb) {
+DB.prototype._get = function (key, wait, result, visit, cb) {
   var path = hash(key, true)
   var self = this
+  var updates = this._updates
 
   this.heads(function (err, heads) {
     if (err) return cb(err)
-    if (!heads.length) return cb(null, null)
+
+    if (!heads.length) {
+      if (wait) return self._wait(key, updates, result, visit, cb)
+      return cb(null, null)
+    }
 
     var missing = heads.length
     var error = null
@@ -320,7 +327,10 @@ DB.prototype._get = function (key, result, visit, cb) {
       if (--missing) return
       if (error) return cb(error)
 
-      if (!result || !result.length) return cb(null, null)
+      if (!result || !result.length) {
+        if (wait) return self._wait(key, updates, result, visit, cb)
+        return cb(null, null)
+      }
 
       if (self._map) result = result.map(self._map)
       if (self._reduce) result = result.reduce(self._reduce)
@@ -328,6 +338,11 @@ DB.prototype._get = function (key, result, visit, cb) {
       cb(null, result)
     }
   })
+}
+
+DB.prototype._wait = function (key, oldUpdate, result, visit, cb) {
+  if (oldUpdate !== this._updates) return this._get(key, true, result, visit, cb)
+  this.once('remote-update', this._get.bind(this, key, true, result, visit, cb))
 }
 
 DB.prototype._visitPut = function (key, path, i, j, k, node, heads, trie, cb) {
@@ -489,6 +504,7 @@ DB.prototype._createFeed = function (key, dir) {
   }
 
   function onremoteupdate (peer) {
+    self._updates++
     self.emit('remote-update', this, peer)
   }
 
