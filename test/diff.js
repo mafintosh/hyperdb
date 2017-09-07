@@ -1,5 +1,6 @@
 var tape = require('tape')
 var create = require('./helpers/create')
+var replicate = require('./helpers/replicate')
 
 tape('implicit checkout', function (t) {
   var db = create.one()
@@ -117,7 +118,26 @@ tape('updated value', function (t) {
   })
 })
 
-// TODO: multiple feeds
+tape('basic with 2 feeds', function (t) {
+  var expected = [
+    { type: 'put', name: '/a', value: 'a' }
+  ]
+
+  create.two(function (a, b) {
+    a.put('/a', 'a', function () {
+      replicate(a, b, validate)
+    })
+
+    function validate () {
+      var rs = b.createDiffStream('/a')
+      collect(rs, function (err, actual) {
+        t.error(err, 'no error')
+        t.deepEqual(actual, expected, 'diff as expected')
+        t.end()
+      })
+    }
+  })
+})
 
 function collect (stream, cb) {
   var res = []
