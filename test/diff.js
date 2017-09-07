@@ -2,6 +2,19 @@ var tape = require('tape')
 var create = require('./helpers/create')
 var replicate = require('./helpers/replicate')
 
+tape('empty diff', function (t) {
+  var db = create.one()
+
+  var expected = []
+
+  var rs = db.createDiffStream('/a')
+  collect(rs, function (err, actual) {
+    t.error(err, 'no error')
+    t.deepEqual(actual, expected, 'diff as expected')
+    t.end()
+  })
+})
+
 tape('implicit checkout', function (t) {
   var db = create.one()
 

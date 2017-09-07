@@ -685,9 +685,11 @@ DB.prototype.createDiffStream = function (key, at) {
   // 1: Walk the trie starting at the head of all logs
   this.heads(function (err, heads) {
     if (err) return cb(err)
-    missing--
-    if (!heads.length) return cb(null, null)
+    if (!heads.length) {
+      return onDone(null, {})
+    }
 
+    missing--
     for (var i = 0; i < heads.length; i++) {
       missing++
       self._visitTrie(key, path, heads[i], {}, {}, at, onDone)
@@ -708,14 +710,12 @@ DB.prototype.createDiffStream = function (key, at) {
   var a, b
 
   function onDone2 (err, result) {
-    // console.log('res2', result)
     if (err) return cb(err)
     b = result
     if (!--missing) onAllDone()
   }
 
   function onDone (err, result) {
-    // console.log('res1', result)
     if (err) return cb(err)
     a = result
     if (!--missing) onAllDone()
