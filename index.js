@@ -661,15 +661,15 @@ DB.prototype._visitGet = function (key, path, i, node, heads, result, onvisit, c
   }
 }
 
-// Return a Readable stream of changes to a hyperdb since 'checkout', an array
+// Return a Readable stream of changes to a hyperdb since 'at', an array
 // of { feed: id, seq: Number}.
 //
-// If 'checkout' is not provided, the beginning of history is compared against.
+// If 'at' is not provided, the beginning of history is compared against.
 //
 // For now, this is NOT a live stream. History at call-time is compared against
-// 'checkout'.
-DB.prototype.createDiffStream = function (key, checkout) {
-  if (!checkout) checkout = []  // Diff from the beginning
+// 'at'.
+DB.prototype.createDiffStream = function (key, at) {
+  if (!at) at = []  // Diff from the beginning
 
   var stream = new Readable({objectMode: true})
   stream._read = noop
@@ -690,14 +690,14 @@ DB.prototype.createDiffStream = function (key, checkout) {
 
     for (var i = 0; i < heads.length; i++) {
       missing++
-      self._visitTrie(key, path, heads[i], {}, {}, checkout, onDone)
+      self._visitTrie(key, path, heads[i], {}, {}, at, onDone)
     }
   })
 
   // 2: Walk the trie starting at CHECKOUT
-  var keys = Object.keys(checkout || {})
+  var keys = Object.keys(at || {})
   for (var i = 0; i < keys.length; i++) {
-    var elm = checkout[i]
+    var elm = at[i]
     missing++
     self._writers[i].get(elm, function (err, node) {
       if (err) return cb(err)
@@ -734,7 +734,7 @@ DB.prototype.createDiffStream = function (key, checkout) {
   return stream
 }
 
-DB.prototype.checkout = function (cb) {
+DB.prototype.snapshot = function (cb) {
   this.heads(function (err, heads) {
     if (err) return cb(err)
     if (!heads.length) return cb(null, [])
@@ -748,13 +748,13 @@ DB.prototype.checkout = function (cb) {
   })
 }
 
-DB.prototype._visitTrie = function (key, path, node, head, checkout, halt, cb) {
+DB.prototype._visitTrie = function (key, path, node, head, snapshot, halt, cb) {
   var self = this
   var missing = 0
 
   cb = once(cb)
 
-  // We've traveled past 'checkout' -- bail.
+  // We've traveled past 'snapshot' -- bail.
   if (halt && halt[node.feed] && halt[node.feed] > node.seq) {
     return cb()
   }
@@ -770,12 +770,12 @@ DB.prototype._visitTrie = function (key, path, node, head, checkout, halt, cb) {
 
   if (prefixMatch) {
     // Mark this match as either the first time we've seen it (head), an older
-    // value of this key we're still tracking backwards in time (checkout), or a
+    // value of this key we're still tracking backwards in time (snapshot), or a
     // duplicate that we've already procesed (deduped).
     if (!head[node.key]) {
       head[node.key] = node
     } else if (head[node.key].feed !== node.feed || head[node.key].seq !== node.seq) {
-      checkout[node.key] = node
+      snapshot[node.key] = node
     }
   }
 
@@ -789,7 +789,7 @@ DB.prototype._visitTrie = function (key, path, node, head, checkout, halt, cb) {
       missing++
       self._writers[entry.feed].get(entry.seq, function (err, node) {
         if (err) return fin(null)
-        self._visitTrie(key, path, node, head, checkout, halt, function (err) {
+        self._visitTrie(key, path, node, head, snapshot, halt, function (err) {
           if (err) return fin(err)
           if (!--missing) fin(null)
         })
@@ -799,7 +799,7 @@ DB.prototype._visitTrie = function (key, path, node, head, checkout, halt, cb) {
 
   if (!missing) fin(null)
 
-  // Finalize the results by taking a diff of 'head' and 'checkout'.
+  // Finalize the results by taking a diff of 'head' and 'snapshot'.
   function fin () {
     cb(null, head)
   }

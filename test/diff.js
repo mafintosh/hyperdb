@@ -27,7 +27,7 @@ tape('new value', function (t) {
     { type: 'put', name: '/a', value: '2' }
   ]
 
-  db.checkout(function (err, co) {
+  db.snapshot(function (err, co) {
     t.error(err, 'no error')
     db.put('/a', '2', function (err) {
       t.error(err, 'no error')
@@ -48,7 +48,7 @@ tape('new value, twice', function (t) {
     { type: 'put', name: '/a', value: '2' }
   ]
 
-  db.checkout(function (err, co) {
+  db.snapshot(function (err, co) {
     t.error(err, 'no error')
     db.put('/a', '1', function (err) {
       t.error(err, 'no error')
@@ -75,7 +75,7 @@ tape('untracked value', function (t) {
 
   db.put('/a', '1', function (err) {
     t.error(err, 'no error')
-    db.checkout(function (err, co) {
+    db.snapshot(function (err, co) {
       t.error(err, 'no error')
       db.put('/a', '2', function (err) {
         t.error(err, 'no error')
@@ -103,7 +103,7 @@ tape('updated value', function (t) {
 
   db.put('/a/d/r', '1', function (err) {
     t.error(err, 'no error')
-    db.checkout(function (err, co) {
+    db.snapshot(function (err, co) {
       t.error(err, 'no error')
       db.put('/a/d/r', '3', function (err) {
         t.error(err, 'no error')
