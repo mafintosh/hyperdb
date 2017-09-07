@@ -1,4 +1,4 @@
-var hyperdb = require('hyperdb')
+var hyperdb = require('./')
 
 var db = hyperdb('./my.db', {valueEncoding: 'utf-8'})
 
