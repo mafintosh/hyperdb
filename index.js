@@ -10,6 +10,7 @@ var events = require('events')
 var inherits = require('inherits')
 var toBuffer = require('to-buffer')
 var Readable = require('stream').Readable
+var once = require('once')
 var protocol = null // lazy load on replicate
 
 module.exports = DB
@@ -750,6 +751,8 @@ DB.prototype._visitTrie = function (key, path, node, head, checkout, halt, cb) {
   var self = this
   var missing = 0
 
+  cb = once(cb)
+
   // We've traveled past 'checkout' -- bail.
   if (halt && halt[node.feed] && halt[node.feed] > node.seq) {
     return cb()
@@ -778,14 +781,15 @@ DB.prototype._visitTrie = function (key, path, node, head, checkout, halt, cb) {
   // Traverse the node's entire trie, recursively, hunting for more nodes with
   // the desired prefix.
   var trie = node.trie[i]
-  for (var i = 0; trie && i < trie.length; i++) {
+  for (i = 0; trie && i < trie.length; i++) {
     var entrySet = trie[i]
     for (var j = 0; entrySet && j < entrySet.length; j++) {
       var entry = entrySet[j]
       missing++
       self._writers[entry.feed].get(entry.seq, function (err, node) {
-        self._visitTrie(key, path, node, head, checkout, halt, function () {
-          // TODO: handle error
+        if (err) return fin(null)
+        self._visitTrie(key, path, node, head, checkout, halt, function (err) {
+          if (err) return fin(err)
           if (!--missing) fin(null)
         })
       })
