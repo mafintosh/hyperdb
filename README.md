@@ -117,6 +117,26 @@ db.watch('/foo/bar', function () {
 db.put('/foo/bar/baz', 'hi') // triggers the above
 ```
 
+#### `db.snapshot(cb)`
+
+Return an object capturing the current state of `db` via the callback `cb` as
+`function (err, at)`. This object `at` can be passed into `db.createDiffStream`.
+
+#### `var stream = db.createDiffStream(key[, at])`
+
+Find out about changes in key/value pairs between the snapshot `at` and now for
+all keys prefixed by `key`.
+
+`stream` is a readable object stream that outputs modifications like
+
+```js
+{ type: 'del', name: '/a', value: '1' },
+{ type: 'put', name: '/a', value: '2' }
+{ type: 'put', name: '/b/beep', value: 'boop' }
+```
+
+that occured between `at` and the time of calling the function.
+
 #### `var stream = db.replicate([options])`
 
 Create a replication stream. Options include:
