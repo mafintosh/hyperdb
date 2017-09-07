@@ -695,7 +695,8 @@ DB.prototype.createDiffStream = function (key, checkout) {
   })
 
   // 2: Walk the trie starting at CHECKOUT
-  for (var i = 0; checkout && i < Object.keys(checkout).length; i++) {
+  var keys = Object.keys(checkout || {})
+  for (var i = 0; i < keys.length; i++) {
     var elm = checkout[i]
     missing++
     self._writers[i].get(elm, function (err, node) {
@@ -780,10 +781,10 @@ DB.prototype._visitTrie = function (key, path, node, head, checkout, halt, cb) {
 
   // Traverse the node's entire trie, recursively, hunting for more nodes with
   // the desired prefix.
-  var trie = node.trie[i]
-  for (i = 0; trie && i < trie.length; i++) {
-    var entrySet = trie[i]
-    for (var j = 0; entrySet && j < entrySet.length; j++) {
+  var trie = node.trie[i] || []
+  for (i = 0; i < trie.length; i++) {
+    var entrySet = trie[i] || []
+    for (var j = 0; j < entrySet.length; j++) {
       var entry = entrySet[j]
       missing++
       self._writers[entry.feed].get(entry.seq, function (err, node) {
@@ -794,10 +795,6 @@ DB.prototype._visitTrie = function (key, path, node, head, checkout, halt, cb) {
         })
       })
     }
-  }
-
-  function onMismatch () {
-    if (!--missing) fin(null)
   }
 
   if (!missing) fin(null)
