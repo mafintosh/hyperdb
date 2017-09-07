@@ -54,6 +54,31 @@ tape('new value', function (t) {
   })
 })
 
+tape('two new values', function (t) {
+  var db = create.one()
+
+  var expected = [
+    { type: 'put', name: '/a/bar', value: 'baz' },
+    { type: 'put', name: '/a/foo', value: 'quux' }
+  ]
+
+  db.snapshot(function (err, co) {
+    t.error(err, 'no error')
+    db.put('/a/foo', 'quux', function (err) {
+      t.error(err, 'no error')
+      db.put('/a/bar', 'baz', function (err) {
+        t.error(err, 'no error')
+        var rs = db.createDiffStream('/a', co)
+        collect(rs, function (err, actual) {
+          t.error(err, 'no error')
+          t.deepEqual(actual, expected, 'diff as expected')
+          t.end()
+        })
+      })
+    })
+  })
+})
+
 tape('checkout === head', function (t) {
   var db = create.one()
 

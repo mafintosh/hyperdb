@@ -781,19 +781,21 @@ DB.prototype._visitTrie = function (key, path, node, head, snapshot, halt, cb) {
 
   // Traverse the node's entire trie, recursively, hunting for more nodes with
   // the desired prefix.
-  var trie = node.trie[i] || []
-  for (i = 0; i < trie.length; i++) {
-    var entrySet = trie[i] || []
-    for (var j = 0; j < entrySet.length; j++) {
-      var entry = entrySet[j]
-      missing++
-      self._writers[entry.feed].get(entry.seq, function (err, node) {
-        if (err) return fin(null)
-        self._visitTrie(key, path, node, head, snapshot, halt, function (err) {
-          if (err) return fin(err)
-          if (!--missing) fin(null)
+  for (var k = 0; k < node.trie.length; k++) {
+    var trie = node.trie[k] || []
+    for (i = 0; i < trie.length; i++) {
+      var entrySet = trie[i] || []
+      for (var j = 0; j < entrySet.length; j++) {
+        var entry = entrySet[j]
+        missing++
+        self._writers[entry.feed].get(entry.seq, function (err, node) {
+          if (err) return fin(null)
+          self._visitTrie(key, path, node, head, snapshot, halt, function (err) {
+            if (err) return fin(err)
+            if (!--missing) fin(null)
+          })
         })
-      })
+      }
     }
   }
 
