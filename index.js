@@ -811,10 +811,12 @@ function diffNodeSets (a, b) {
   var ak = Object.keys(a)
   var result = []
   for (var i = 0; i < ak.length; i++) {
-    if (a[ak[i]] && b[ak[i]]) {
+    var A = a[ak[i]]
+    var B = b[ak[i]]
+    if (A && B && A !== B) {
       result.push({ type: 'del', name: ak[i], value: b[ak[i]].value })
       result.push({ type: 'put', name: ak[i], value: a[ak[i]].value })
-    } else if (a[ak[i]] && !b[ak[i]]) {
+    } else if (A && (!B || A === B)) {
       result.push({ type: 'put', name: ak[i], value: a[ak[i]].value })
     }
   }
