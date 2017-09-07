@@ -12,6 +12,7 @@ tape('implicit checkout', function (t) {
     t.error(err, 'no error')
     var rs = db.createDiffStream('/a')
     collect(rs, function (err, actual) {
+      t.error(err, 'no error')
       t.deepEqual(actual, expected, 'diff as expected')
       t.end()
     })
@@ -26,10 +27,12 @@ tape('new value', function (t) {
   ]
 
   db.checkout(function (err, co) {
+    t.error(err, 'no error')
     db.put('/a', '2', function (err) {
       t.error(err, 'no error')
       var rs = db.createDiffStream('/a', co)
       collect(rs, function (err, actual) {
+        t.error(err, 'no error')
         t.deepEqual(actual, expected, 'diff as expected')
         t.end()
       })
@@ -45,12 +48,14 @@ tape('new value, twice', function (t) {
   ]
 
   db.checkout(function (err, co) {
+    t.error(err, 'no error')
     db.put('/a', '1', function (err) {
       t.error(err, 'no error')
       db.put('/a', '2', function (err) {
         t.error(err, 'no error')
         var rs = db.createDiffStream('/a', co)
         collect(rs, function (err, actual) {
+          t.error(err, 'no error')
           t.deepEqual(actual, expected, 'diff as expected')
           t.end()
         })
@@ -77,6 +82,7 @@ tape('untracked value', function (t) {
           t.error(err, 'no error')
           var rs = db.createDiffStream('/a', co)
           collect(rs, function (err, actual) {
+            t.error(err, 'no error')
             t.deepEqual(actual, expected, 'diff as expected')
             t.end()
           })
@@ -102,6 +108,7 @@ tape('updated value', function (t) {
         t.error(err, 'no error')
         var rs = db.createDiffStream('/a', co)
         collect(rs, function (err, actual) {
+          t.error(err, 'no error')
           t.deepEqual(actual, expected, 'diff as expected')
           t.end()
         })
