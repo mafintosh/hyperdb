@@ -181,7 +181,6 @@ tape('diff root', function (t) {
   })
 })
 
-
 tape('updated value', function (t) {
   var db = create.one()
 

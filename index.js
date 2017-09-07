@@ -686,13 +686,13 @@ DB.prototype.createDiffStream = function (key, at) {
   this.heads(function (err, heads) {
     if (err) return cb(err)
     if (!heads.length) {
-      return onDone(null, {})
+      return onDoneFromHead(null, {})
     }
 
     missing--
     for (var i = 0; i < heads.length; i++) {
       missing++
-      self._visitTrie(key, path, heads[i], {}, {}, at, onDone)
+      self._visitTrie(key, path, heads[i], {}, {}, at, onDoneFromHead)
     }
   })
 
@@ -703,21 +703,21 @@ DB.prototype.createDiffStream = function (key, at) {
     missing++
     self._writers[i].get(elm, function (err, node) {
       if (err) return cb(err)
-      self._visitTrie(key, path, node, {}, {}, null, onDone2)
+      self._visitTrie(key, path, node, {}, {}, null, onDoneFromSnapshot)
     })
   }
 
   var a, b
 
-  function onDone2 (err, result) {
+  function onDoneFromHead (err, result) {
     if (err) return cb(err)
-    b = result
+    a = result
     if (!--missing) onAllDone()
   }
 
-  function onDone (err, result) {
+  function onDoneFromSnapshot (err, result) {
     if (err) return cb(err)
-    a = result
+    b = result
     if (!--missing) onAllDone()
   }
 
