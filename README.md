@@ -122,7 +122,7 @@ db.put('/foo/bar/baz', 'hi') // triggers the above
 Return an object capturing the current state of `db` via the callback `cb` as
 `function (err, at)`. This object `at` can be passed into `db.createDiffStream`.
 
-#### `var stream = db.createDiffStream(key[, at])`
+#### `var stream = db.createDiffStream(key[, at][, opts])`
 
 Find out about changes in key/value pairs between the snapshot `at` and now for
 all keys prefixed by `key`.
@@ -136,6 +136,11 @@ all keys prefixed by `key`.
 ```
 
 that occured between `at` and the time of calling the function.
+
+Valid `opts` include:
+
+- `opts.head` (optional): a snapshot to use as the HEAD to compare against. If
+  not provided, the current HEAD of the database is used.
 
 #### `var stream = db.replicate([options])`
 
