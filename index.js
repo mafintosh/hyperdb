@@ -661,9 +661,8 @@ DB.prototype._visitGet = function (key, path, i, node, heads, result, onvisit, c
   }
 }
 
-DB.prototype.createDiffStream = function (key, at, opts) {
-  if (!at) at = []  // Diff from the beginning
-  opts = opts || {}
+DB.prototype.createDiffStream = function (key, checkout, head) {
+  if (!checkout) checkout = []  // Diff from the beginning
 
   var stream = new Readable({objectMode: true})
   stream._read = noop
@@ -677,8 +676,8 @@ DB.prototype.createDiffStream = function (key, at, opts) {
   var missing = 1
 
   // 1: Walk the trie starting at the head of all logs
-  if (!opts.head) this.heads(onHeads)
-  else snapshotToNodes(opts.head, onHeads)
+  if (!head) this.heads(onHeads)
+  else snapshotToNodes(head, onHeads)
 
   function onHeads (err, heads) {
     if (err) return cb(err)
@@ -689,12 +688,12 @@ DB.prototype.createDiffStream = function (key, at, opts) {
     missing--
     for (var i = 0; i < heads.length; i++) {
       missing++
-      self._visitTrie(key, path, heads[i], {}, {}, at, onDoneFromHead)
+      self._visitTrie(key, path, heads[i], {}, {}, checkout, onDoneFromHead)
     }
   }
 
   // 2: Walk the trie starting at CHECKOUT
-  snapshotToNodes(at, function (err, nodes) {
+  snapshotToNodes(checkout, function (err, nodes) {
     if (err) return cb(err)
     missing += nodes.length
     for (var i = 0; i < nodes.length; i++) {

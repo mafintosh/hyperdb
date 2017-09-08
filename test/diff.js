@@ -79,7 +79,7 @@ tape('two new values', function (t) {
   })
 })
 
-tape('opts.head', function (t) {
+tape('set head', function (t) {
   var db = create.one()
 
   var expected = [
@@ -94,7 +94,7 @@ tape('opts.head', function (t) {
         t.error(err, 'no error')
         db.put('/a/bar', 'baz', function (err) {
           t.error(err, 'no error')
-          var rs = db.createDiffStream('/a', co1, { head: co2 })
+          var rs = db.createDiffStream('/a', co1, co2)
           collect(rs, function (err, actual) {
             t.error(err, 'no error')
             t.deepEqual(actual, expected, 'diff as expected')
@@ -106,7 +106,7 @@ tape('opts.head', function (t) {
   })
 })
 
-tape('opts.head 2', function (t) {
+tape('set head 2', function (t) {
   var db = create.one()
 
   var expected = [
@@ -121,7 +121,7 @@ tape('opts.head 2', function (t) {
         t.error(err, 'no error')
         db.snapshot(function (err, co2) {
           t.error(err, 'no error')
-          var rs = db.createDiffStream('/a', co1, { head: co2 })
+          var rs = db.createDiffStream('/a', co1, co2)
           collect(rs, function (err, actual) {
             t.error(err, 'no error')
             t.deepEqual(actual, expected, 'diff as expected')

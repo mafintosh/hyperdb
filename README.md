@@ -122,10 +122,14 @@ db.put('/foo/bar/baz', 'hi') // triggers the above
 Return an object capturing the current state of `db` via the callback `cb` as
 `function (err, at)`. This object `at` can be passed into `db.createDiffStream`.
 
-#### `var stream = db.createDiffStream(key[, at][, opts])`
+#### `var stream = db.createDiffStream(key[, checkout][, head])`
 
-Find out about changes in key/value pairs between the snapshot `at` and now for
-all keys prefixed by `key`.
+Find out about changes in key/value pairs between the snapshot `checkout` and
+`head` for all keys prefixed by `key`.
+
+`checkout` and `head` are snapshots to use to compare against. If not provided,
+`head is the current HEAD of the database, and `checkout` is the beginning of
+time.
 
 `stream` is a readable object stream that outputs modifications like
 
@@ -135,12 +139,7 @@ all keys prefixed by `key`.
 { type: 'put', name: '/b/beep', value: 'boop' }
 ```
 
-that occured between `at` and the time of calling the function.
-
-Valid `opts` include:
-
-- `opts.head` (optional): a snapshot to use as the HEAD to compare against. If
-  not provided, the current HEAD of the database is used.
+that occured between `checkout` and `head`.
 
 #### `var stream = db.replicate([options])`
 
