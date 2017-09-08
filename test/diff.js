@@ -106,6 +106,33 @@ tape('opts.head', function (t) {
   })
 })
 
+tape('opts.head 2', function (t) {
+  var db = create.one()
+
+  var expected = [
+    { type: 'put', name: '/a/bar', value: 'baz' }
+  ]
+
+  db.put('/a/foo', 'quux', function (err) {
+    t.error(err, 'no error')
+    db.snapshot(function (err, co1) {
+      t.error(err, 'no error')
+      db.put('/a/bar', 'baz', function (err) {
+        t.error(err, 'no error')
+        db.snapshot(function (err, co2) {
+          t.error(err, 'no error')
+          var rs = db.createDiffStream('/a', co1, { head: co2 })
+          collect(rs, function (err, actual) {
+            t.error(err, 'no error')
+            t.deepEqual(actual, expected, 'diff as expected')
+            t.end()
+          })
+        })
+      })
+    })
+  })
+})
+
 tape('checkout === head', function (t) {
   var db = create.one()
 
