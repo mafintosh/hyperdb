@@ -668,8 +668,9 @@ DB.prototype._visitGet = function (key, path, i, node, heads, result, onvisit, c
 //
 // For now, this is NOT a live stream. History at call-time is compared against
 // 'at'.
-DB.prototype.createDiffStream = function (key, at) {
+DB.prototype.createDiffStream = function (key, at, opts) {
   if (!at) at = []  // Diff from the beginning
+  opts = opts || {}
 
   var stream = new Readable({objectMode: true})
   stream._read = noop
@@ -683,7 +684,10 @@ DB.prototype.createDiffStream = function (key, at) {
   var missing = 1
 
   // 1: Walk the trie starting at the head of all logs
-  this.heads(function (err, heads) {
+  if (!opts.head) this.heads(onHeads)
+  else snapshotToNodes(opts.head, onHeads)
+
+  function onHeads (err, heads) {
     if (err) return cb(err)
     if (!heads.length) {
       return onDoneFromHead(null, {})
@@ -694,17 +698,30 @@ DB.prototype.createDiffStream = function (key, at) {
       missing++
       self._visitTrie(key, path, heads[i], {}, {}, at, onDoneFromHead)
     }
-  })
+  }
 
   // 2: Walk the trie starting at CHECKOUT
-  var keys = Object.keys(at || {})
-  for (var i = 0; i < keys.length; i++) {
-    var elm = at[i]
-    missing++
-    self._writers[i].get(elm, function (err, node) {
-      if (err) return cb(err)
-      self._visitTrie(key, path, node, {}, {}, null, onDoneFromSnapshot)
-    })
+  snapshotToNodes(at, function (err, nodes) {
+    if (err) return cb(err)
+    missing += nodes.length
+    for (var i = 0; i < nodes.length; i++) {
+      self._visitTrie(key, path, nodes[i], {}, {}, null, onDoneFromSnapshot)
+    }
+  })
+
+  function snapshotToNodes (snapshot, cb) {
+    cb = once(cb)
+    var result = []
+    var keys = Object.keys(snapshot || {})
+    var pending = keys.length
+    for (var i = 0; i < keys.length; i++) {
+      var elm = snapshot[i]
+      self._writers[i].get(elm, function (err, node) {
+        if (err) return cb(err)
+        result.push(node)
+        if (!--pending) cb(null, result)
+      })
+    }
   }
 
   var a, b
