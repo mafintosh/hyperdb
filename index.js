@@ -661,13 +661,6 @@ DB.prototype._visitGet = function (key, path, i, node, heads, result, onvisit, c
   }
 }
 
-// Return a Readable stream of changes to a hyperdb since 'at', an array
-// of { feed: id, seq: Number}.
-//
-// If 'at' is not provided, the beginning of history is compared against.
-//
-// For now, this is NOT a live stream. History at call-time is compared against
-// 'at'.
 DB.prototype.createDiffStream = function (key, at, opts) {
   if (!at) at = []  // Diff from the beginning
   opts = opts || {}
