@@ -686,9 +686,10 @@ DB.prototype.createDiffStream = function (key, checkout, head) {
     }
 
     missing--
+    var visited = {}
     for (var i = 0; i < heads.length; i++) {
       missing++
-      self._visitTrie(key, path, heads[i], {}, {}, checkout, onDoneFromHead)
+      self._visitTrie(key, path, heads[i], {}, {}, checkout, visited, onDoneFromHead)
     }
   }
 
@@ -696,8 +697,9 @@ DB.prototype.createDiffStream = function (key, checkout, head) {
   snapshotToNodes(checkout, function (err, nodes) {
     if (err) return cb(err)
     missing += nodes.length
+    var visited = {}
     for (var i = 0; i < nodes.length; i++) {
-      self._visitTrie(key, path, nodes[i], {}, {}, null, onDoneFromSnapshot)
+      self._visitTrie(key, path, nodes[i], {}, {}, null, visited, onDoneFromSnapshot)
     }
   })
 
@@ -758,11 +760,16 @@ DB.prototype.snapshot = function (cb) {
   })
 }
 
-DB.prototype._visitTrie = function (key, path, node, head, snapshot, halt, cb) {
+DB.prototype._visitTrie = function (key, path, node, head, snapshot, halt, visited, cb) {
   var self = this
   var missing = 0
 
   cb = once(cb)
+
+  var id = node.feed + ',' + node.seq
+
+  if (visited[id]) return cb()
+  visited[id] = true
 
   // We've traveled past 'snapshot' -- bail.
   if (halt && halt[node.feed] !== undefined && halt[node.feed] >= node.seq) {
@@ -797,10 +804,13 @@ DB.prototype._visitTrie = function (key, path, node, head, snapshot, halt, cb) {
       var entrySet = trie[i] || []
       for (var j = 0; j < entrySet.length; j++) {
         var entry = entrySet[j]
+        id = entry.feed + ',' + entry.seq
+        if (visited[id]) continue
+
         missing++
         self._writers[entry.feed].get(entry.seq, function (err, node) {
           if (err) return fin(null)
-          self._visitTrie(key, path, node, head, snapshot, halt, function (err) {
+          self._visitTrie(key, path, node, head, snapshot, halt, visited, function (err) {
             if (err) return fin(err)
             if (!--missing) fin(null)
           })
