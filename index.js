@@ -713,6 +713,7 @@ DB.prototype.createDiffStream = function (key, at, opts) {
     cb = once(cb)
     var result = []
     var keys = Object.keys(snapshot || {})
+    if (!keys.length) return cb(null, result)
     var pending = keys.length
     for (var i = 0; i < keys.length; i++) {
       var elm = snapshot[i]
