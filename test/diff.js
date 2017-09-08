@@ -110,7 +110,6 @@ tape('checkout === head', function (t) {
   var db = create.one()
 
   var expected = [
-    { type: 'put', name: '/a', value: '2' }
   ]
 
   db.put('/a', '2', function (err) {
