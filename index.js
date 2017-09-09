@@ -767,8 +767,6 @@ DB.prototype._visitTrie = function (key, path, node, head, snapshot, halt, visit
   cb = once(cb)
 
   var id = node.feed + ',' + node.seq
-
-  if (visited[id]) return cb()
   visited[id] = true
 
   // We've traveled past 'snapshot' -- bail.
@@ -804,8 +802,10 @@ DB.prototype._visitTrie = function (key, path, node, head, snapshot, halt, visit
       var entrySet = trie[i] || []
       for (var j = 0; j < entrySet.length; j++) {
         var entry = entrySet[j]
+
         id = entry.feed + ',' + entry.seq
         if (visited[id]) continue
+        visited[id] = true
 
         missing++
         self._writers[entry.feed].get(entry.seq, function (err, node) {
