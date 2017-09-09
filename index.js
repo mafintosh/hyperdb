@@ -673,7 +673,7 @@ DB.prototype.createDiffStream = function (key, checkout, head) {
 
   var self = this
   var path = hash(key, true)
-  var missing = 1
+  var missing = 2
 
   // 1: Walk the trie starting at the head of all logs
   if (!head) this.heads(onHeads)
@@ -696,6 +696,7 @@ DB.prototype.createDiffStream = function (key, checkout, head) {
   // 2: Walk the trie starting at CHECKOUT
   snapshotToNodes(checkout, function (err, nodes) {
     if (err) return cb(err)
+    missing--
     missing += nodes.length
     var visited = {}
     for (var i = 0; i < nodes.length; i++) {
