@@ -696,6 +696,9 @@ DB.prototype.createDiffStream = function (key, checkout, head) {
   // 2: Walk the trie starting at CHECKOUT
   snapshotToNodes(checkout, function (err, nodes) {
     if (err) return cb(err)
+    if (!nodes.length) {
+      return onDoneFromSnapshot(null, {})
+    }
     missing--
     missing += nodes.length
     var visited = {}
