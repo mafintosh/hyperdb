@@ -64,6 +64,7 @@ function DB (storage, key, opts) {
 inherits(DB, events.EventEmitter)
 
 DB.prototype.batch = function (batch, cb) {
+  if (!cb) cb = noop
   if (!batch.length) return process.nextTick(cb, null)
 
   var self = this
