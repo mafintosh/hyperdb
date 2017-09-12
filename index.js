@@ -411,7 +411,7 @@ DB.prototype._visitPut = function (key, path, i, j, k, node, heads, trie, batch,
         var rval = remoteVals[k]
 
         if (val === hash.TERMINATE) {
-          getBatch(writers[rval.feed], batch, rval.seq, onfilterdups)
+          getBatch(self, writers[rval.feed], batch, rval.seq, onfilterdups)
           return
         }
 
@@ -434,7 +434,7 @@ DB.prototype._visitPut = function (key, path, i, j, k, node, heads, trie, batch,
       error = null
 
       for (var l = 0; l < remoteVals.length; l++) {
-        getBatch(writers[remoteVals[l].feed], batch, remoteVals[l].seq, onremoteval)
+        getBatch(self, writers[remoteVals[l].feed], batch, remoteVals[l].seq, onremoteval)
       }
       return
     }
@@ -461,8 +461,8 @@ DB.prototype._visitPut = function (key, path, i, j, k, node, heads, trie, batch,
   }
 }
 
-function getBatch (w, batch, seq, cb) {
-  if (!batch || seq < w.feed.length) return w.get(seq, cb)
+function getBatch (self, w, batch, seq, cb) {
+  if (!batch || self._localWriter !== w || seq < w.feed.length) return w.get(seq, cb)
   process.nextTick(cb, null, batch[seq - w.feed.length])
 }
 
