@@ -67,6 +67,18 @@ Emitted if there was a critical error before `db` is ready.
 
 Insert a new value. Will merge any previous values seen for this key.
 
+#### `db.batch(batch, [callback])`
+
+Insert a batch of values efficiently. A batch should be an array of objects that look like this:
+
+``` js
+{
+  type: 'put',
+  key: someKey,
+  value: someValue
+}
+```
+
 #### `db.get(key, callback)`
 
 Lookup a string `key`. Returns a nodes array with the current values for this key.

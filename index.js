@@ -63,6 +63,35 @@ function DB (storage, key, opts) {
 
 inherits(DB, events.EventEmitter)
 
+DB.prototype.batch = function (batch, cb) {
+  if (!cb) cb = noop
+  if (!batch.length) return process.nextTick(cb, null)
+
+  var self = this
+  var nodes = []
+  var i = 0
+
+  this._lock(function (release) {
+    loop(null)
+
+    function loop (err) {
+      if (err) return done(err)
+
+      if (i === batch.length) {
+        self._localWriter.batch(nodes, done)
+        return
+      }
+
+      var b = batch[i++]
+      self._put(b.key, b.value, nodes, loop)
+    }
+
+    function done (err) {
+      release(cb, err)
+    }
+  })
+}
+
 DB.prototype.heads = function (cb) {
   var result = []
   var error = null
@@ -220,13 +249,13 @@ DB.prototype.put = function (key, value, cb) {
   var self = this
 
   this._lock(function (release) {
-    self._put(key, value, function (err) {
+    self._put(key, value, null, function (err) {
       release(cb, err)
     })
   })
 }
 
-DB.prototype._put = function (key, value, cb) {
+DB.prototype._put = function (key, value, batch, cb) {
   if (!cb) cb = noop
 
   var self = this
@@ -240,13 +269,19 @@ DB.prototype._put = function (key, value, cb) {
     var feed = self._localWriter.id
     var clock = []
     var i = 0
+    var len = self._localWriter.feed.length
+
+    if (batch && batch.length) {
+      len += batch.length
+      heads[feed] = batch[batch.length - 1]
+    }
 
     for (i = 0; i < self._writers.length; i++) {
       clock.push(i === feed ? 0 : self._writers[i].feed.length)
     }
 
     var node = {
-      seq: self._localWriter.feed.length,
+      seq: len,
       feed: feed,
       key: key,
       path: path,
@@ -255,16 +290,17 @@ DB.prototype._put = function (key, value, cb) {
       trie: []
     }
 
-    if (!heads.length) {
-      self._localWriter.append(node, ondone)
-      return
-    }
-
     var missing = heads.length
     var error = null
 
+    if (!missing) {
+      missing++
+      onput(null)
+      return
+    }
+
     for (i = 0; i < heads.length; i++) {
-      self._visitPut(key, path, 0, 0, 0, heads[i], heads, node.trie, onput)
+      self._visitPut(key, path, 0, 0, 0, heads[i], heads, node.trie, batch, onput)
     }
 
     function onput (err) {
@@ -272,6 +308,11 @@ DB.prototype._put = function (key, value, cb) {
       if (--missing) return
 
       if (error) return cb(err)
+
+      if (batch) {
+        batch.push(node)
+        return ondone(null, node)
+      }
 
       self._localWriter.append(node, ondone)
     }
@@ -345,7 +386,7 @@ DB.prototype._wait = function (key, oldUpdate, result, visit, cb) {
   this.once('remote-update', this._get.bind(this, key, true, result, visit, cb))
 }
 
-DB.prototype._visitPut = function (key, path, i, j, k, node, heads, trie, cb) {
+DB.prototype._visitPut = function (key, path, i, j, k, node, heads, trie, batch, cb) {
   var writers = this._writers
   var self = this
   var missing = 0
@@ -370,7 +411,7 @@ DB.prototype._visitPut = function (key, path, i, j, k, node, heads, trie, cb) {
         var rval = remoteVals[k]
 
         if (val === hash.TERMINATE) {
-          writers[rval.feed].get(rval.seq, onfilterdups)
+          getBatch(writers[rval.feed], batch, rval.seq, onfilterdups)
           return
         }
 
@@ -393,7 +434,7 @@ DB.prototype._visitPut = function (key, path, i, j, k, node, heads, trie, cb) {
       error = null
 
       for (var l = 0; l < remoteVals.length; l++) {
-        writers[remoteVals[l].feed].get(remoteVals[l].seq, onremoteval)
+        getBatch(writers[remoteVals[l].feed], batch, remoteVals[l].seq, onremoteval)
       }
       return
     }
@@ -405,19 +446,24 @@ DB.prototype._visitPut = function (key, path, i, j, k, node, heads, trie, cb) {
     if (err) return cb(err)
     var valPointer = {feed: val.feed, seq: val.seq}
     if (val.key !== key && noDup(vals, valPointer)) vals.push(valPointer)
-    self._visitPut(key, path, i, j, k + 1, node, heads, trie, cb)
+    self._visitPut(key, path, i, j, k + 1, node, heads, trie, batch, cb)
   }
 
   function onremoteval (err, val) {
     if (err) return onvisit(err)
     if (!updateHead(val, node, heads)) return onvisit(null)
-    self._visitPut(key, path, i + 1, j, k, val, heads, trie, onvisit)
+    self._visitPut(key, path, i + 1, j, k, val, heads, trie, batch, onvisit)
   }
 
   function onvisit (err) {
     if (err) error = err
     if (!--missing) cb(error)
   }
+}
+
+function getBatch (w, batch, seq, cb) {
+  if (!batch || seq < w.feed.length) return w.get(seq, cb)
+  process.nextTick(cb, null, batch[seq - w.feed.length])
 }
 
 DB.prototype._open = function (cb) {

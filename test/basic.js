@@ -225,3 +225,49 @@ tape('race works', function (t) {
     })
   }
 })
+
+tape('batch', function (t) {
+  t.plan(17)
+
+  var db = create.one()
+
+  db.batch([{
+    type: 'put',
+    key: 'foo',
+    value: 'foo'
+  }, {
+    type: 'put',
+    key: 'bar',
+    value: 'bar'
+  }], function (err) {
+    t.error(err)
+    same('foo', 'foo')
+    same('bar', 'bar')
+    db.batch([{
+      type: 'put',
+      key: 'foo',
+      value: 'foo2'
+    }, {
+      type: 'put',
+      key: 'bar',
+      value: 'bar2'
+    }, {
+      type: 'put',
+      key: 'baz',
+      value: 'baz'
+    }], function (err) {
+      t.error(err)
+      same('foo', 'foo2')
+      same('bar', 'bar2')
+      same('baz', 'baz')
+    })
+  })
+
+  function same (key, val) {
+    db.get(key, function (err, node) {
+      t.error(err, 'no error')
+      t.same(node.key, key)
+      t.same(node.value, val)
+    })
+  }
+})
