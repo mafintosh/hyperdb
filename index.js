@@ -675,6 +675,9 @@ DB.prototype.createDiffStream = function (key, checkout, head) {
   var path = hash(key, true)
   var missing = 2
 
+  var a = {}
+  var b = {}
+
   // 1: Walk the trie starting at the head of all logs
   if (!head) this.heads(onHeads)
   else snapshotToNodes(head, onHeads)
@@ -689,7 +692,7 @@ DB.prototype.createDiffStream = function (key, checkout, head) {
     var visited = {}
     for (var i = 0; i < heads.length; i++) {
       missing++
-      self._visitTrie(key, path, heads[i], {}, {}, checkout, visited, onDoneFromHead)
+      self._visitTrie(key, path, heads[i], {}, checkout, visited, onDoneFromHead)
     }
   }
 
@@ -703,7 +706,7 @@ DB.prototype.createDiffStream = function (key, checkout, head) {
     missing += nodes.length
     var visited = {}
     for (var i = 0; i < nodes.length; i++) {
-      self._visitTrie(key, path, nodes[i], {}, {}, null, visited, onDoneFromSnapshot)
+      self._visitTrie(key, path, nodes[i], {}, null, visited, onDoneFromSnapshot)
     }
   })
 
@@ -723,18 +726,24 @@ DB.prototype.createDiffStream = function (key, checkout, head) {
     }
   }
 
-  var a, b
-
   function onDoneFromHead (err, result) {
     if (err) return cb(err)
-    a = result
+    merge(a, result)
     if (!--missing) onAllDone()
   }
 
   function onDoneFromSnapshot (err, result) {
     if (err) return cb(err)
-    b = result
+    merge(b, result)
     if (!--missing) onAllDone()
+  }
+
+  // Merge b into a
+  function merge (a, b) {
+    Object.keys(b).forEach(function (key) {
+      a[key] = (a[key] || []).concat(b[key])
+    })
+    return a
   }
 
   function onAllDone () {
@@ -764,7 +773,7 @@ DB.prototype.snapshot = function (cb) {
   })
 }
 
-DB.prototype._visitTrie = function (key, path, node, head, snapshot, halt, visited, cb) {
+DB.prototype._visitTrie = function (key, path, node, heads, halt, visited, cb, type) {
   var self = this
   var missing = 0
 
@@ -775,7 +784,7 @@ DB.prototype._visitTrie = function (key, path, node, head, snapshot, halt, visit
 
   // We've traveled past 'snapshot' -- bail.
   if (halt && halt[node.feed] !== undefined && halt[node.feed] >= node.seq) {
-    return cb()
+    return cb(null, {})
   }
 
   // Check if this node matches the desired prefix.
@@ -787,15 +796,12 @@ DB.prototype._visitTrie = function (key, path, node, head, snapshot, halt, visit
     }
   }
 
-  if (prefixMatch) {
-    // Mark this match as either the first time we've seen it (head), an older
-    // value of this key we're still tracking backwards in time (snapshot), or a
-    // duplicate that we've already procesed (deduped).
-    if (!head[node.key]) {
-      head[node.key] = node
-    } else if (head[node.key].feed !== node.feed || head[node.key].seq !== node.seq) {
-      snapshot[node.key] = node
-    }
+  // Mark this match as either the first time we've seen it (heads), an older
+  // value of this key we're still tracking backwards in time (snapshot), or a
+  // duplicate that we've already procesed (deduped).
+  if (prefixMatch && !heads[node.key]) {
+    heads[node.key] = heads[node.key] || []
+    heads[node.key].push(node)
   }
 
   // Traverse the node's entire trie, recursively, hunting for more nodes with
@@ -814,7 +820,7 @@ DB.prototype._visitTrie = function (key, path, node, head, snapshot, halt, visit
         missing++
         self._writers[entry.feed].get(entry.seq, function (err, node) {
           if (err) return fin(null)
-          self._visitTrie(key, path, node, head, snapshot, halt, visited, function (err) {
+          self._visitTrie(key, path, node, heads, halt, visited, function (err) {
             if (err) return fin(err)
             if (!--missing) fin(null)
           })
@@ -825,28 +831,41 @@ DB.prototype._visitTrie = function (key, path, node, head, snapshot, halt, visit
 
   if (!missing) fin(null)
 
-  // Finalize the results by taking a diff of 'head' and 'snapshot'.
+  // Finalize the results by taking a diff of 'heads' and 'snapshot'.
   function fin () {
-    cb(null, head)
+    cb(null, heads)
   }
 }
 
 function noop () {}
 
 function diffNodeSets (a, b) {
+  console.log('diff', a, b)
   var ak = Object.keys(a)
   var result = []
   for (var i = 0; i < ak.length; i++) {
     var A = a[ak[i]]
     var B = b[ak[i]]
-    if (A && B && A !== B) {
-      result.push({ type: 'del', name: ak[i], value: b[ak[i]].value })
-      result.push({ type: 'put', name: ak[i], value: a[ak[i]].value })
+    if (A && B && !entriesEqual(A, B)) {
+      result.push({ type: 'del', name: ak[i], value: B.map(map) })
+      result.push({ type: 'put', name: ak[i], value: A.map(map) })
     } else if (A && (!B || A === B)) {
-      result.push({ type: 'put', name: ak[i], value: a[ak[i]].value })
+      result.push({ type: 'put', name: ak[i], value: A.map(map) })
     }
   }
   return result
+
+  function map (a) {
+    return a.value
+  }
+
+  function entriesEqual (a, b) {
+    if (a.length !== b.length) return false
+    for (var i = 0; i < a.length; i++) {
+      if (a[i] !== b[i]) return false
+    }
+    return true
+  }
 }
 
 function updateHead (newNode, oldNode, heads) {

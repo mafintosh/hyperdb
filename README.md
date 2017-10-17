@@ -134,12 +134,13 @@ time.
 `stream` is a readable object stream that outputs modifications like
 
 ```js
-{ type: 'del', name: '/a', value: '1' },
-{ type: 'put', name: '/a', value: '2' }
-{ type: 'put', name: '/b/beep', value: 'boop' }
+{ type: 'del', name: '/a', value: ['1'] },
+{ type: 'put', name: '/a', value: ['2'] }
+{ type: 'put', name: '/b/beep', value: ['boop', 'beep'] }
 ```
 
-that occured between `checkout` and `head`.
+that occured between `checkout` and `head`. When multiple feeds conflict for the
+value of a key at a point in time, `value` will have multiple entries.
 
 #### `var stream = db.replicate([options])`
 

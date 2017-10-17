@@ -19,7 +19,7 @@ tape('implicit checkout', function (t) {
   var db = create.one()
 
   var expected = [
-    { type: 'put', name: '/a', value: '2' }
+    { type: 'put', name: '/a', value: ['2'] }
   ]
 
   db.put('/a', '2', function (err) {
@@ -37,7 +37,7 @@ tape('new value', function (t) {
   var db = create.one()
 
   var expected = [
-    { type: 'put', name: '/a', value: '2' }
+    { type: 'put', name: '/a', value: ['2'] }
   ]
 
   db.snapshot(function (err, co) {
@@ -58,8 +58,8 @@ tape('two new values', function (t) {
   var db = create.one()
 
   var expected = [
-    { type: 'put', name: '/a/bar', value: 'baz' },
-    { type: 'put', name: '/a/foo', value: 'quux' }
+    { type: 'put', name: '/a/bar', value: ['baz'] },
+    { type: 'put', name: '/a/foo', value: ['quux'] }
   ]
 
   db.snapshot(function (err, co) {
@@ -83,7 +83,7 @@ tape('set head', function (t) {
   var db = create.one()
 
   var expected = [
-    { type: 'put', name: '/a/foo', value: 'quux' }
+    { type: 'put', name: '/a/foo', value: ['quux'] }
   ]
 
   db.snapshot(function (err, co1) {
@@ -110,7 +110,7 @@ tape('set head 2', function (t) {
   var db = create.one()
 
   var expected = [
-    { type: 'put', name: '/a/bar', value: 'baz' }
+    { type: 'put', name: '/a/bar', value: ['baz'] }
   ]
 
   db.put('/a/foo', 'quux', function (err) {
@@ -136,8 +136,7 @@ tape('set head 2', function (t) {
 tape('checkout === head', function (t) {
   var db = create.one()
 
-  var expected = [
-  ]
+  var expected = []
 
   db.put('/a', '2', function (err) {
     t.error(err, 'no error')
@@ -157,7 +156,7 @@ tape('new value, twice', function (t) {
   var db = create.one()
 
   var expected = [
-    { type: 'put', name: '/a', value: '2' }
+    { type: 'put', name: '/a', value: ['2'] }
   ]
 
   db.snapshot(function (err, co) {
@@ -181,8 +180,8 @@ tape('untracked value', function (t) {
   var db = create.one()
 
   var expected = [
-    { type: 'del', name: '/a', value: '1' },
-    { type: 'put', name: '/a', value: '2' }
+    { type: 'del', name: '/a', value: ['1'] },
+    { type: 'put', name: '/a', value: ['2'] }
   ]
 
   db.put('/a', '1', function (err) {
@@ -209,9 +208,9 @@ tape('diff root', function (t) {
   var db = create.one()
 
   var expected = [
-    { type: 'put', name: '/b', value: '17' },
-    { type: 'del', name: '/a', value: '1' },
-    { type: 'put', name: '/a', value: '2' }
+    { type: 'put', name: '/b', value: ['17'] },
+    { type: 'del', name: '/a', value: ['1'] },
+    { type: 'put', name: '/a', value: ['2'] }
   ]
 
   db.put('/a', '1', function (err) {
@@ -238,8 +237,8 @@ tape('updated value', function (t) {
   var db = create.one()
 
   var expected = [
-    { type: 'del', name: '/a/d/r', value: '1' },
-    { type: 'put', name: '/a/d/r', value: '3' }
+    { type: 'del', name: '/a/d/r', value: ['1'] },
+    { type: 'put', name: '/a/d/r', value: ['3'] }
   ]
 
   db.put('/a/d/r', '1', function (err) {
@@ -261,12 +260,35 @@ tape('updated value', function (t) {
 
 tape('basic with 2 feeds', function (t) {
   var expected = [
-    { type: 'put', name: '/a', value: 'a' }
+    { type: 'put', name: '/a', value: ['a'] }
   ]
 
   create.two(function (a, b) {
     a.put('/a', 'a', function () {
       replicate(a, b, validate)
+    })
+
+    function validate () {
+      var rs = b.createDiffStream('/a')
+      collect(rs, function (err, actual) {
+        t.error(err, 'no error')
+        t.deepEqual(actual, expected, 'diff as expected')
+        t.end()
+      })
+    }
+  })
+})
+
+tape('two feeds /w competing for a value', function (t) {
+  var expected = [
+    { type: 'put', name: '/a', value: ['b', 'a'] }
+  ]
+
+  create.two(function (a, b) {
+    a.put('/a', 'a', function () {
+      b.put('/a', 'b', function () {
+        replicate(a, b, validate)
+      })
     })
 
     function validate () {
