@@ -1,0 +1,18 @@
+{
+  "name": "hyperdb",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "from2": "^2.3.0",
+    "hypercore": "^6.10.1",
+    "random-access-memory": "^2.4.0",
+    "sodium-universal": "^1.4.0",
+    "to-buffer": "^1.1.0"
+  }
+}
