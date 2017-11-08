@@ -121,19 +121,26 @@ DB.prototype.get = function (key, opts, cb) {
   key = normalizeKey(key)
   var prefixed = !!(opts && opts.prefix)
 
-  // TODO: add comments
+  // If we the logs are empty -> 404
   var len = this._length > -1 ? this._length : this._nodes.length
   if (!len) return cb(null, null)
 
+  // Get the entry point (these nodes act as the version of the db)
   var head = this._nodes[len - 1]
   var path = hash(key, !prefixed)
 
+  // We want to find the key closest to our path.
+  // At max, we need to go through path.length iterations
   for (var i = 0; i < path.length; i++) {
     var val = path[i]
     if (head.path[i] === val) continue
 
+    // We need a closer node. See if the trie has one that
+    // matches the path value
     var remoteBucket = head.trie[i] || []
     var remoteValues = remoteBucket[val] || []
+
+    // No closer ones -> 404
     if (!remoteValues.length) return cb(null, null)
 
     if (remoteValues.length > 1) {
@@ -141,6 +148,7 @@ DB.prototype.get = function (key, opts, cb) {
       process.exit(1)
     }
 
+    // Recursive from a closer node
     head = this._nodes[remoteValues[0].seq]
   }
 
