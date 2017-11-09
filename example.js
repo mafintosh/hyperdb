@@ -19,5 +19,5 @@ db.put('i/0/#0', 'new value')
 // db.put('hejsa', 'verden')
 
 snapshot.createReadStream('/', {recursive: false})
-  .on('data', nodes => console.log(nodes[0].path.join(''), nodes[0].key, nodes[0].value))
+  .on('data', nodes => console.log(nodes[0].path.join(''), nodes[0].key, '-->', nodes[0].value))
   .on('end', _ => console.log('(done)'))

@@ -8,14 +8,14 @@ module.exports = DB
 
 function DB () {
   if (!(this instanceof DB)) return new DB()
-  this._nodes = []
+  this._feeds = []
   this._length = -1
 }
 
 DB.prototype.snapshot = function () {
   var snapshot = new DB()
-  snapshot._nodes = this._nodes
-  snapshot._length = this._nodes.length
+  snapshot._feeds = this._feeds
+  snapshot._length = this._feeds.length
   return snapshot
 }
 
@@ -25,22 +25,25 @@ DB.prototype.put = function (key, val, cb) {
 
   key = normalizeKey(key)
   var path = hash(key, true)
+  var writable = this._feeds[0]
+
+  if (!writable) writable = this._feeds[0] = []
 
   var node = {
     path: path,
     feed: 0,
-    seq: this._nodes.length,
+    seq: writable.length,
     key: key,
     value: val,
     trie: []
   }
 
-  if (!this._nodes.length) {
-    this._nodes.push(node)
+  if (!writable.length) {
+    writable.push(node)
     return cb(null)
   }
 
-  var head = this._nodes[this._nodes.length - 1]
+  var head = writable[writable.length - 1]
 
   // each bucket works as a bitfield
   // i.e. an index corresponds to a key (2 bit value) + 0b100 (hash.TERMINATE)
@@ -106,12 +109,12 @@ DB.prototype.put = function (key, val, cb) {
         process.exit()
       }
 
-      head = this._nodes[remoteValues[0].seq]
+      head = this._feeds[remoteValues[0].feed][remoteValues[0].seq]
       continue
     }
   }
 
-  this._nodes.push(node)
+  writable.push(node)
   cb(null)
 }
 
@@ -122,11 +125,11 @@ DB.prototype.get = function (key, opts, cb) {
   var prefixed = !!(opts && opts.prefix)
 
   // If we the logs are empty -> 404
-  var len = this._length > -1 ? this._length : this._nodes.length
+  var len = this._length > -1 ? this._length : this._feeds[0].length
   if (!len) return cb(null, null)
 
   // Get the entry point (these nodes act as the version of the db)
-  var head = this._nodes[len - 1]
+  var head = this._feeds[0][len - 1]
   var path = hash(key, !prefixed)
 
   // We want to find the key closest to our path.
@@ -149,7 +152,7 @@ DB.prototype.get = function (key, opts, cb) {
     }
 
     // Recursive from a closer node
-    head = this._nodes[remoteValues[0].seq]
+    head = this._feeds[remoteValues[0].feed][remoteValues[0].seq]
   }
 
   if (prefixed && isPrefix(head.key, key)) return cb(null, [head])
