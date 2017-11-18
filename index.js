@@ -91,6 +91,9 @@ DB.prototype.put = function (key, val, cb) {
 }
 
 DB.prototype._put = function (node, head) {
+  // TODO: when there is a fork, this will visit the same nodes more than once
+  // which isn't a big deal, but unneeded - can be optimised away in the future
+
   // each bucket works as a bitfield
   // i.e. an index corresponds to a key (2 bit value) + 0b100 (hash.TERMINATE)
   // since this is eventual consistent + hash collisions there can be more than
@@ -132,7 +135,7 @@ DB.prototype._put = function (node, head) {
         }
 
         // push the old value
-        localValues.push(remoteVal)
+        pushNoDups(localValues, remoteVal)
       }
     }
 
@@ -144,7 +147,7 @@ DB.prototype._put = function (node, head) {
       if (!localBucket) localBucket = node.trie[i] = []
       if (!localBucket[headVal]) localBucket[headVal] = []
       localValues = localBucket[headVal]
-      localValues.push({feed: head.feed, seq: head.seq})
+      pushNoDups(localValues, {feed: head.feed, seq: head.seq})
 
       // check if head has a closer pointer
       remoteValues = remoteBucket[val]
@@ -159,6 +162,14 @@ DB.prototype._put = function (node, head) {
       continue
     }
   }
+}
+
+function pushNoDups (list, val) {
+  for (var i = 0; i < list.length; i++) {
+    var l = list[i]
+    if (l.feed === val.feed && l.seq === val.seq) return
+  }
+  list.push(val)
 }
 
 DB.prototype.get = function (key, opts, cb) {
