@@ -1,7 +1,7 @@
 var hyperdb = require('./')
 
 var db = hyperdb()
-var n = 1000
+var n = 100
 var snapshot = db
 
 db.put('hello', 'world')
@@ -12,6 +12,9 @@ for (var i = 0; i < n; i++) {
 }
 
 db.put('i/0/#0', 'new value')
+
+db.get('hello', console.log)
+return
 
 // db.get('4', {prefix: true}, console.log)
 // db.put('hello', 'world')

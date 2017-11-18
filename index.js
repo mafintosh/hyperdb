@@ -6,10 +6,16 @@ var iterator = require('./lib/iterator')
 
 module.exports = DB
 
-function DB () {
-  if (!(this instanceof DB)) return new DB()
+function DB (opts) {
+  if (!(this instanceof DB)) return new DB(opts)
+  if (!opts) opts = {}
+
+  this._id = opts.id || 0
   this._feeds = []
   this._length = -1
+  this._feeds[this._id] = []
+  this._map = opts.map || null
+  this._reduce = opts.reduce || null
 }
 
 DB.prototype.snapshot = function () {
@@ -19,32 +25,72 @@ DB.prototype.snapshot = function () {
   return snapshot
 }
 
+DB.prototype.heads = function () {
+  var heads = []
+  var i, j
+
+  for (i = 0; i < this._feeds.length; i++) {
+    if (this._feeds[i] && this._feeds[i].length) {
+      heads.push(this._feeds[i][this._feeds[i].length - 1])
+    }
+  }
+
+  for (i = 0; i < heads.length; i++) {
+    var h = heads[i]
+    if (!h) continue
+
+    for (j = 0; j < h.clock.length; j++) {
+      var c = h.clock[j]
+      if (heads[j] && heads[j].seq < c && j !== h.feed) {
+        heads[j] = null
+      }
+    }
+  }
+
+  return heads.filter(x => x)
+}
+
 DB.prototype.put = function (key, val, cb) {
   if (!cb) cb = noop
   if (this._length > -1) return process.nextTick(cb, new Error('Cannot put on a snapshot'))
 
   key = normalizeKey(key)
   var path = hash(key, true)
-  var writable = this._feeds[0]
+  var writable = this._feeds[this._id]
+  var clock = []
 
-  if (!writable) writable = this._feeds[0] = []
+  for (var i = 0; i < this._feeds.length; i++) {
+    clock[i] = (this._feeds[i] || []).length
+  }
 
+
+  if (!writable) writable = this._feeds[this._id] = []
+
+  var heads = this.heads()
   var node = {
     path: path,
-    feed: 0,
+    feed: this._id,
     seq: writable.length,
+    clock: clock,
     key: key,
     value: val,
     trie: []
   }
 
-  if (!writable.length) {
+  if (!heads.length) {
     writable.push(node)
     return cb(null)
   }
 
-  var head = writable[writable.length - 1]
+  for (var i = 0; i < heads.length; i++) {
+    this._put(node, heads[i])
+  }
 
+  writable.push(node)
+  cb(null)
+}
+
+DB.prototype._put = function (node, head) {
   // each bucket works as a bitfield
   // i.e. an index corresponds to a key (2 bit value) + 0b100 (hash.TERMINATE)
   // since this is eventual consistent + hash collisions there can be more than
@@ -55,8 +101,8 @@ DB.prototype.put = function (key, val, cb) {
   var remoteBucket
   var remoteValues
 
-  for (var i = 0; i < path.length; i++) {
-    var val = path[i] // the two bit value
+  for (var i = 0; i < node.path.length; i++) {
+    var val = node.path[i] // the two bit value
     var headVal = head.path[i] // the two value of the current head
 
     localBucket = node.trie[i] // forks in the trie for this index
@@ -113,23 +159,32 @@ DB.prototype.put = function (key, val, cb) {
       continue
     }
   }
-
-  writable.push(node)
-  cb(null)
 }
 
 DB.prototype.get = function (key, opts, cb) {
   if (typeof opts === 'function') return this.get(key, null, opts)
-
   key = normalizeKey(key)
+
+  var results = []
+  var heads = this.heads()
+
+  for (var i = 0; i < heads.length; i++) {
+    this._get(key, opts, heads[i], results)
+  }
+
+  if (this._map) results = results.map(this._map)
+  if (this._reduce) results = results.length ? results.reduce(this._reduce) : null
+
+  process.nextTick(cb, null, results)
+}
+
+DB.prototype._get = function (key, opts, head, results) {
   var prefixed = !!(opts && opts.prefix)
 
-  // If we the logs are empty -> 404
-  var len = this._length > -1 ? this._length : this._feeds[0].length
-  if (!len) return cb(null, null)
+  // If no head -> 404
+  if (!head) return cb(null, null)
 
-  // Get the entry point (these nodes act as the version of the db)
-  var head = this._feeds[0][len - 1]
+  // Do not terminate the hash if it is a prefix search
   var path = hash(key, !prefixed)
 
   // We want to find the key closest to our path.
@@ -144,10 +199,10 @@ DB.prototype.get = function (key, opts, cb) {
     var remoteValues = remoteBucket[val] || []
 
     // No closer ones -> 404
-    if (!remoteValues.length) return cb(null, null)
+    if (!remoteValues.length) return
 
     if (remoteValues.length > 1) {
-      console.log('fork')
+      console.log('get fork', remoteValues)
       process.exit(1)
     }
 
@@ -155,9 +210,12 @@ DB.prototype.get = function (key, opts, cb) {
     head = this._feeds[remoteValues[0].feed][remoteValues[0].seq]
   }
 
-  if (prefixed && isPrefix(head.key, key)) return cb(null, [head])
-  if (head.key === key) return cb(null, [head])
-  cb(null, null)
+  if (prefixed && isPrefix(head.key, key)) return push(results, head)
+  if (head.key === key) return push(results, head)
+}
+
+function push (results, node) {
+  results.push(node)
 }
 
 DB.prototype.list = function (prefix, opts, cb) {
