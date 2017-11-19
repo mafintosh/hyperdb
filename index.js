@@ -129,9 +129,10 @@ DB.prototype._put = function (node, head) {
 
         // might be a collions, check key and stuff
         if (val === hash.TERMINATE) {
-          var resolved = this.feed[remoteVal.seq]
-          console.log('todo: implement me here ...')
-          return
+          var resolved = this._feeds[remoteVal.feed][remoteVal.seq]
+          // if it's the same key it's not a collision but an overwrite...
+          if (resolved.key === node.key) continue
+          // hash collision! fall through the if and add this value
         }
 
         // push the old value
@@ -139,8 +140,8 @@ DB.prototype._put = function (node, head) {
       }
     }
 
-    // check if trie is splitting
-    if (headVal !== val || (headVal === hash.TERMINATE && head.key !== key)) {
+    // check if trie is splitting (either diff value or hash collision)
+    if (headVal !== val || (headVal === hash.TERMINATE && head.key !== node.key)) {
       // we cannot follow the heads trie anymore --> change head to a closer one if possible
 
       // add head to our trie, so we reference back
@@ -153,9 +154,11 @@ DB.prototype._put = function (node, head) {
       remoteValues = remoteBucket[val]
       if (!remoteValues || !remoteValues.length) break
 
-      if (remoteValues.length > 1) {
-        console.log('put fork!')
-        process.exit()
+      if (remoteValues.length > 1) { // more than one - fork out
+        for (var k = 0; k < remoteValues.length; k++) {
+          this._put(node, this._feeds[remoteValues[k].feed][remoteValues[k].seq])
+        }
+        return
       }
 
       head = this._feeds[remoteValues[0].feed][remoteValues[0].seq]
@@ -221,6 +224,21 @@ DB.prototype._get = function (key, opts, head, results) {
     head = this._feeds[remoteValues[0].feed][remoteValues[0].seq]
   }
 
+  pushResult(prefixed, results, key, head)
+
+  // check if we had a collision, or similar (our last bucket contains more stuff)
+
+  var last = head.trie[path.length - 1]
+  var lastValues = last && last[path[path.length - 1]]
+  if (!lastValues) return
+
+  for (var j = 0; j < lastValues.length; j++) {
+    var val = this._feeds[lastValues[j].feed][lastValues[j].seq]
+    pushResult(prefixed, results, key, val)
+  }
+}
+
+function pushResult (prefixed, results, key, head) {
   if (prefixed && isPrefix(head.key, key)) return push(results, head)
   if (head.key === key) return push(results, head)
 }
