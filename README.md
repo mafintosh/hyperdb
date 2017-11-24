@@ -117,6 +117,31 @@ db.watch('/foo/bar', function () {
 db.put('/foo/bar/baz', 'hi') // triggers the above
 ```
 
+#### `db.snapshot(cb)`
+
+Return an object capturing the current state of `db` via the callback `cb` as
+`function (err, at)`. This object `at` can be passed into `db.createDiffStream`.
+
+#### `var stream = db.createDiffStream(key[, checkout][, head])`
+
+Find out about changes in key/value pairs between the snapshot `checkout` and
+`head` for all keys prefixed by `key`.
+
+`checkout` and `head` are snapshots to use to compare against. If not provided,
+`head is the current HEAD of the database, and `checkout` is the beginning of
+time.
+
+`stream` is a readable object stream that outputs modifications like
+
+```js
+{ type: 'del', name: '/a', value: ['1'] },
+{ type: 'put', name: '/a', value: ['2'] }
+{ type: 'put', name: '/b/beep', value: ['boop', 'beep'] }
+```
+
+that occured between `checkout` and `head`. When multiple feeds conflict for the
+value of a key at a point in time, `value` will have multiple entries.
+
 #### `var stream = db.replicate([options])`
 
 Create a replication stream. Options include:

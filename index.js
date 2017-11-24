@@ -9,6 +9,8 @@ var codecs = require('codecs')
 var events = require('events')
 var inherits = require('inherits')
 var toBuffer = require('to-buffer')
+var Readable = require('stream').Readable
+var once = require('once')
 var protocol = null // lazy load on replicate
 
 module.exports = DB
@@ -659,7 +661,212 @@ DB.prototype._visitGet = function (key, path, i, node, heads, result, onvisit, c
   }
 }
 
+DB.prototype.createDiffStream = function (key, checkout, head) {
+  if (!checkout) checkout = []  // Diff from the beginning
+
+  var stream = new Readable({objectMode: true})
+  stream._read = noop
+
+  function cb (err) {
+    stream.emit('error', err)
+  }
+
+  var self = this
+  var path = hash(key, true)
+  var missing = 2
+
+  var a = {}
+  var b = {}
+
+  // 1: Walk the trie starting at the head of all logs
+  if (!head) this.heads(onHeads)
+  else snapshotToNodes(head, onHeads)
+
+  function onHeads (err, heads) {
+    if (err) return cb(err)
+    if (!heads.length) {
+      return onDoneFromHead(null, {})
+    }
+
+    missing--
+    var visited = {}
+    for (var i = 0; i < heads.length; i++) {
+      missing++
+      self._visitTrie(key, path, heads[i], {}, checkout, visited, onDoneFromHead)
+    }
+  }
+
+  // 2: Walk the trie starting at CHECKOUT
+  snapshotToNodes(checkout, function (err, nodes) {
+    if (err) return cb(err)
+    if (!nodes.length) {
+      return onDoneFromSnapshot(null, {})
+    }
+    missing--
+    missing += nodes.length
+    var visited = {}
+    for (var i = 0; i < nodes.length; i++) {
+      self._visitTrie(key, path, nodes[i], {}, null, visited, onDoneFromSnapshot)
+    }
+  })
+
+  function snapshotToNodes (snapshot, cb) {
+    cb = once(cb)
+    var result = []
+    var keys = Object.keys(snapshot || {})
+    if (!keys.length) return cb(null, result)
+    var pending = keys.length
+    for (var i = 0; i < keys.length; i++) {
+      var elm = snapshot[i]
+      self._writers[i].get(elm, function (err, node) {
+        if (err) return cb(err)
+        result.push(node)
+        if (!--pending) cb(null, result)
+      })
+    }
+  }
+
+  function onDoneFromHead (err, result) {
+    if (err) return cb(err)
+    merge(a, result)
+    if (!--missing) onAllDone()
+  }
+
+  function onDoneFromSnapshot (err, result) {
+    if (err) return cb(err)
+    merge(b, result)
+    if (!--missing) onAllDone()
+  }
+
+  // Merge b into a
+  function merge (a, b) {
+    Object.keys(b).forEach(function (key) {
+      a[key] = (a[key] || []).concat(b[key])
+    })
+    return a
+  }
+
+  function onAllDone () {
+    a = a || {}
+    b = b || {}
+    var diff = diffNodeSets(a, b)
+    for (var i = 0; i < diff.length; i++) {
+      stream.push(diff[i])
+    }
+    stream.push(null)
+  }
+
+  return stream
+}
+
+DB.prototype.snapshot = function (cb) {
+  this.heads(function (err, heads) {
+    if (err) return cb(err)
+    if (!heads.length) return cb(null, [])
+
+    var result = {}
+    for (var i = 0; i < heads.length; i++) {
+      result[heads[i].feed] = heads[i].seq
+    }
+
+    cb(null, result)
+  })
+}
+
+DB.prototype._visitTrie = function (key, path, node, heads, halt, visited, cb, type) {
+  var self = this
+  var missing = 0
+
+  cb = once(cb)
+
+  var id = node.feed + ',' + node.seq
+  visited[id] = true
+
+  // We've traveled past 'snapshot' -- bail.
+  if (halt && halt[node.feed] !== undefined && halt[node.feed] >= node.seq) {
+    return cb(null, {})
+  }
+
+  // Check if this node matches the desired prefix.
+  var prefixMatch = true
+  for (var i = 0; i < path.length && path[i] !== hash.TERMINATE; i++) {
+    if (path[i] !== node.path[i]) {
+      prefixMatch = false
+      break
+    }
+  }
+
+  // Mark this match as either the first time we've seen it (heads), an older
+  // value of this key we're still tracking backwards in time (snapshot), or a
+  // duplicate that we've already procesed (deduped).
+  if (prefixMatch && !heads[node.key]) {
+    heads[node.key] = heads[node.key] || []
+    heads[node.key].push(node)
+  }
+
+  // Traverse the node's entire trie, recursively, hunting for more nodes with
+  // the desired prefix.
+  for (var k = 0; k < node.trie.length; k++) {
+    var trie = node.trie[k] || []
+    for (i = 0; i < trie.length; i++) {
+      var entrySet = trie[i] || []
+      for (var j = 0; j < entrySet.length; j++) {
+        var entry = entrySet[j]
+
+        id = entry.feed + ',' + entry.seq
+        if (visited[id]) continue
+        visited[id] = true
+
+        missing++
+        self._writers[entry.feed].get(entry.seq, function (err, node) {
+          if (err) return fin(null)
+          self._visitTrie(key, path, node, heads, halt, visited, function (err) {
+            if (err) return fin(err)
+            if (!--missing) fin(null)
+          })
+        })
+      }
+    }
+  }
+
+  if (!missing) fin(null)
+
+  // Finalize the results by taking a diff of 'heads' and 'snapshot'.
+  function fin () {
+    cb(null, heads)
+  }
+}
+
 function noop () {}
+
+function diffNodeSets (a, b) {
+  console.log('diff', a, b)
+  var ak = Object.keys(a)
+  var result = []
+  for (var i = 0; i < ak.length; i++) {
+    var A = a[ak[i]]
+    var B = b[ak[i]]
+    if (A && B && !entriesEqual(A, B)) {
+      result.push({ type: 'del', name: ak[i], value: B.map(map) })
+      result.push({ type: 'put', name: ak[i], value: A.map(map) })
+    } else if (A && (!B || A === B)) {
+      result.push({ type: 'put', name: ak[i], value: A.map(map) })
+    }
+  }
+  return result
+
+  function map (a) {
+    return a.value
+  }
+
+  function entriesEqual (a, b) {
+    if (a.length !== b.length) return false
+    for (var i = 0; i < a.length; i++) {
+      if (a[i] !== b[i]) return false
+    }
+    return true
+  }
+}
 
 function updateHead (newNode, oldNode, heads) {
   var i = heads.indexOf(oldNode)
