@@ -840,7 +840,6 @@ DB.prototype._visitTrie = function (key, path, node, heads, halt, visited, cb, t
 function noop () {}
 
 function diffNodeSets (a, b) {
-  console.log('diff', a, b)
   var ak = Object.keys(a)
   var result = []
   for (var i = 0; i < ak.length; i++) {
