@@ -7,5 +7,6 @@ db.put('/hello', 'world', function (err) {
   db.get('/hello', function (err, nodes) {
     if (err) throw err
     console.log('/hello --> ' + nodes[0].value)
+    db.version(console.log)
   })
 })

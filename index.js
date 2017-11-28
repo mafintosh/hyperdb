@@ -9,6 +9,7 @@ var codecs = require('codecs')
 var events = require('events')
 var inherits = require('inherits')
 var toBuffer = require('to-buffer')
+var equals = require('buffer-equals')
 var Readable = require('stream').Readable
 var once = require('once')
 var protocol = null // lazy load on replicate
@@ -132,6 +133,31 @@ DB.prototype.heads = function (cb) {
 
     cb(null, result.filter(Boolean))
   }
+}
+
+DB.prototype.version = function (cb) {
+  var self = this
+
+  this.heads(function (err, heads) {
+    if (err) return cb(err)
+
+    var varint = require('varint')
+    var arr = []
+
+    for (var i = 0; i < heads.length; i++) {
+      var h = heads[i]
+      var w = self._writers[h.feed]
+
+      if (equals(w.key, self.key)) {
+        arr.unshift(new Buffer(varint.encode(h.seq)))
+      } else {
+        arr.push(w.key)
+        arr.push(new Buffer(varint.encode(h.seq)))
+      }
+    }
+
+    cb(null, Buffer.concat(arr))
+  })
 }
 
 DB.prototype.authorize = function (key, cb) {
