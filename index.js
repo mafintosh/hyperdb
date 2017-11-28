@@ -947,17 +947,13 @@ function diffNodeSets (a, b) {
     var A = a[ak[i]]
     var B = b[ak[i]]
     if (A && B && !entriesEqual(A, B)) {
-      result.push({ type: 'del', name: ak[i], value: B.map(map) })
-      result.push({ type: 'put', name: ak[i], value: A.map(map) })
+      result.push({ type: 'del', name: ak[i], values: B })
+      result.push({ type: 'put', name: ak[i], values: A })
     } else if (A && (!B || A === B)) {
-      result.push({ type: 'put', name: ak[i], value: A.map(map) })
+      result.push({ type: 'put', name: ak[i], values: A })
     }
   }
   return result
-
-  function map (a) {
-    return a.value
-  }
 
   function entriesEqual (a, b) {
     if (a.length !== b.length) return false
