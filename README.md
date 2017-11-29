@@ -63,6 +63,14 @@ been set. You do not need to wait for this when calling any async functions.
 
 Emitted if there was a critical error before `db` is ready.
 
+#### `db.version(callback)`
+
+Get the current version identifier as a buffer for the db.
+
+#### `var checkout = db.checkout(version)`
+
+Checkout the db at an older version. The checkout is a DB instance as well.
+
 #### `db.put(key, value, [callback])`
 
 Insert a new value. Will merge any previous values seen for this key.
