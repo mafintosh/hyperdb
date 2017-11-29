@@ -938,6 +938,64 @@ DB.prototype._visitTrie = function (key, path, node, heads, halt, visited, cb, t
   }
 }
 
+// TODO(noffle): accept 'version' value for starting point
+DB.prototype.createHistoryStream = function () {
+  var stream = new Readable({objectMode: true})
+  stream._read = noop
+
+  function cb (err) {
+    stream.emit('error', err)
+  }
+
+  if (!this._writers.length) {
+    process.nextTick(function () {
+      stream.push(null)
+    })
+    return stream
+  }
+
+  var self = this
+
+  var pending = this._writers.length
+
+  // Track what seq# we're at for each feed
+  var seq = this._writers.map(function () { return 0 })
+
+  var n = 0
+  get()
+
+  function get () {
+    if (n >= seq.length) n = 0
+    console.log('n', n)
+    if (self._writers[n].feed.length <= seq[n]) {
+      n++
+      return process.nextTick(get)
+    }
+    self._writers[n].get(seq[n], function (err, val) {
+      // Check if this node can be emitted now
+      // Q: how can you tell?
+
+      // If so emit it and move onto seq++
+      stream.push(val)
+      seq[n]++
+      if (seq[n] >= self._writers[n].feed.length) {
+        --pending
+        if (!pending) {
+          stream.push(null)
+          return
+        }
+      }
+
+      // Otherwise, move on to the next feed
+      // n++
+
+      process.nextTick(get)
+    })
+  }
+
+  return stream
+}
+
 function noop () {}
 
 function diffNodeSets (a, b) {
