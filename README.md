@@ -151,6 +151,14 @@ that occured between `checkout` and `head`. When multiple feeds conflict for the
 value of a key at a point in time, `nodes` will have multiple entries. `<node>`
 is the full hyperdb node.
 
+#### `var stream = db.createHistoryStream()
+
+Returns a readable stream of node objects covering all historic values since the
+beginning of time.
+
+Nodes are emitted in topographic order, meaning if value `v2` was aware of value
+`v1` at its insertion time, `v1` must be emitted before `v2`.
+
 #### `var stream = db.replicate([options])`
 
 Create a replication stream. Options include:
