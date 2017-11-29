@@ -966,7 +966,6 @@ DB.prototype.createHistoryStream = function () {
 
   function get () {
     if (n >= seq.length) n = 0
-    console.log('n', n)
     if (self._writers[n].feed.length <= seq[n]) {
       n++
       return process.nextTick(get)
