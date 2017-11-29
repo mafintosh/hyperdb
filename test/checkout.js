@@ -27,4 +27,3 @@ tape('basic checkout', function (t) {
     })
   })
 })
-
