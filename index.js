@@ -149,17 +149,7 @@ DB.prototype.checkout = function (version, opts) {
   if (typeof version === 'string') version = toBuffer(version, 'hex')
 
   opts.parent = this
-
-  var ptr = 0
-  var heads = opts.checkout = []
-
-  while (ptr < version.length) {
-    var key = version.slice(ptr, ptr + 32)
-    ptr += 32
-    var seq = varint.decode(version, ptr)
-    ptr += varint.decode.bytes
-    heads.push({key: key, seq: seq})
-  }
+  opts.checkout = versionToHeads(version)
 
   return new DB(this._storage, null, opts)
 }
@@ -176,11 +166,12 @@ DB.prototype.version = function (cb) {
       var h = heads[i]
       var w = self._writers[h.feed]
 
-      arr.push(w.key)
-      arr.push(toBuffer(varint.encode(h.seq)))
+      arr.push({key: w.key, seq: h.seq})
     }
 
-    cb(null, Buffer.concat(arr))
+    var version = headsToVersion(arr)
+
+    cb(null, version)
   })
 }
 
@@ -938,8 +929,22 @@ DB.prototype._visitTrie = function (key, path, node, heads, halt, visited, cb, t
   }
 }
 
-// TODO(noffle): accept 'version' value for starting point
-DB.prototype.createHistoryStream = function () {
+/*
+ * _writer is emitted when a new writer is added
+ * the order of clock and  the order of _writers are the same
+ * so ...
+ * your logic should be something like this:
+ * var nodes = [firstNodeInWriter1, firstNodeInWriter2, ...]
+ * on('_writer', => addFirstNode to nodes[this._writers.indexOf(writer))
+ * given that array of nodes you want to find the *oldest* one
+ * thats prob a reduce right
+ * oldest (a, b) => if (a.seq < b.clock[a.feed]) return a; else b
+ * pick oldest, emit that node next
+ * the replace node with the writers[node.feed].get(++node.seq)
+ * repeat
+*/
+
+DB.prototype.createHistoryStream = function (start) {
   var stream = new Readable({objectMode: true})
   stream._read = noop
 
@@ -947,48 +952,77 @@ DB.prototype.createHistoryStream = function () {
     stream.emit('error', err)
   }
 
-  if (!this._writers.length) {
-    process.nextTick(function () {
-      stream.push(null)
-    })
-    return stream
+  var startHeads = start ? versionToHeads(start) : null
+
+  function getStartSeq (key) {
+    if (!startHeads) {
+      return 0
+    } else {
+      console.log('sh', key, startHeads)
+      for (var i = 0; i < startHeads.length; i++) {
+        if (startHeads[i].key.equals(key)) {
+          return startHeads[i].seq + 1
+        }
+      }
+      console.log('feed not in heads', key)
+      return 0
+    }
   }
 
   var self = this
 
-  var pending = this._writers.length
-
-  // Track what seq# we're at for each feed
-  var seq = this._writers.map(function () { return 0 })
-
-  var n = 0
-  get()
-
-  function get () {
-    if (n >= seq.length) n = 0
-    if (self._writers[n].feed.length <= seq[n]) {
-      n++
-      return process.nextTick(get)
-    }
-    self._writers[n].get(seq[n], function (err, val) {
-      // Check if this node can be emitted now
-      // Q: how can you tell?
-
-      // If so emit it and move onto seq++
-      stream.push(val)
-      seq[n]++
-      if (seq[n] >= self._writers[n].feed.length) {
-        --pending
-        if (!pending) {
-          stream.push(null)
+  // Populate 'nodes' with first entry in each writer
+  var nodes = []
+  var pending = this._writers.length + 1
+  for (var i = 0; i < this._writers.length; i++) {
+    if (this._writers[i].feed.length > 0) {
+      (function (n) {
+        var seq = getStartSeq(self._writers[n].key)
+        console.log('seq', n, seq, self._writers[n].feed.length)
+        if (seq >= self._writers[n].feed.length) {
+          console.log('bail; at end')
+          if (!--pending) work()
           return
         }
-      }
+        self._writers[n].get(seq, function (err, node) {
+          if (err) return cb(err)
+          nodes[n] = node
+          if (!--pending) work()
+        })
+      })(i)
+    } else if (!--pending) work()
+  }
+  if (!--pending) work()
 
-      // Otherwise, move on to the next feed
-      // n++
+  function work () {
+    if (!nodes.length) {
+      stream.push(null)
+      return
+    }
 
-      process.nextTick(get)
+    var oldest = nodes.reduce(
+      function (a, b) {
+        if (!a && !b) return null
+        else if (!a) return b
+        else if (!b) return a
+        else if (a.seq <= b.clock[a.feed]) return a
+        else return b
+      })
+    console.log('oldest', oldest)
+    stream.push(oldest)
+
+    if (!oldest) return
+
+    if (oldest.seq === self._writers[oldest.feed].feed.length - 1) {
+      nodes[oldest.feed] = null
+      return work()
+    }
+
+    self._writers[oldest.feed].get(oldest.seq + 1, function (err, newNode) {
+      // console.log('get', err, newNode)
+      if (err) return cb(err)
+      nodes[oldest.feed] = newNode
+      work()
     })
   }
 
@@ -1059,4 +1093,32 @@ function isOptions (opts) {
 function sortNodes (a, b) {
   if (a.feed === b.feed) return a.seq - b.seq
   return a.feed - b.feed
+}
+
+// Buffer -> [Head]
+function versionToHeads (version) {
+  var ptr = 0
+  var heads = []
+
+  while (ptr < version.length) {
+    var key = version.slice(ptr, ptr + 32)
+    ptr += 32
+    var seq = varint.decode(version, ptr)
+    ptr += varint.decode.bytes
+    heads.push({key: key, seq: seq})
+  }
+
+  return heads
+}
+
+// [Head] -> Buffer
+function headsToVersion (heads) {
+  var bufAccum = []
+
+  for (var i = 0; i < heads.length; i++) {
+    bufAccum.push(heads[i].key)
+    bufAccum.push(toBuffer(varint.encode(heads[i].seq)))
+  }
+
+  return Buffer.concat(bufAccum)
 }
