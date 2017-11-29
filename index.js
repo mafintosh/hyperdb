@@ -9,6 +9,7 @@ var codecs = require('codecs')
 var events = require('events')
 var inherits = require('inherits')
 var toBuffer = require('to-buffer')
+var varint = require('varint')
 var Readable = require('stream').Readable
 var once = require('once')
 var protocol = null // lazy load on replicate
@@ -35,6 +36,9 @@ function DB (storage, key, opts) {
   this.opened = false
   this.sparse = !!opts.sparse
 
+  this._parent = opts.parent || null
+  this._checkout = opts.checkout || null
+  this._heads = null
   this._codec = opts.valueEncoding ? codecs(opts.valueEncoding) : null
   this._storage = typeof storage === 'string' ? fileStorage : storage
   this._map = opts.map || null
@@ -55,6 +59,7 @@ function DB (storage, key, opts) {
   }
 
   function open (cb) {
+    if (self._parent) return self._openCheckout(cb)
     self._open(cb)
   }
 
@@ -68,6 +73,7 @@ inherits(DB, events.EventEmitter)
 DB.prototype.batch = function (batch, cb) {
   if (!cb) cb = noop
   if (!batch.length) return process.nextTick(cb, null)
+  if (this._parent) return process.nextTick(cb, new Error('Cannot write to a checkout'))
 
   var self = this
   var nodes = []
@@ -106,6 +112,10 @@ DB.prototype.heads = function (cb) {
   function onready (err) {
     if (err) return cb(err)
 
+    if (self._heads) {
+      return cb(null, self._heads)
+    }
+
     for (; i < self._writers.length; i++) {
       missing++
       self._writers[i].head(onhead)
@@ -134,7 +144,48 @@ DB.prototype.heads = function (cb) {
   }
 }
 
+DB.prototype.checkout = function (version, opts) {
+  if (!opts) opts = {}
+  if (typeof version === 'string') version = toBuffer(version, 'hex')
+
+  opts.parent = this
+
+  var ptr = 0
+  var heads = opts.checkout = []
+
+  while (ptr < version.length) {
+    var key = version.slice(ptr, ptr + 32)
+    ptr += 32
+    var seq = varint.decode(version, ptr)
+    ptr += varint.decode.bytes
+    heads.push({key: key, seq: seq})
+  }
+
+  return new DB(this._storage, null, opts)
+}
+
+DB.prototype.version = function (cb) {
+  var self = this
+
+  this.heads(function (err, heads) {
+    if (err) return cb(err)
+
+    var arr = []
+
+    for (var i = 0; i < heads.length; i++) {
+      var h = heads[i]
+      var w = self._writers[h.feed]
+
+      arr.push(w.key)
+      arr.push(toBuffer(varint.encode(h.seq)))
+    }
+
+    cb(null, Buffer.concat(arr))
+  })
+}
+
 DB.prototype.authorize = function (key, cb) {
+  if (this._parent) return process.nextTick(cb || noop, new Error('Cannot write to a checkout'))
   this._createWriter(toBuffer(key, 'hex'))
   this.put('', '', cb)
 }
@@ -248,6 +299,7 @@ DB.prototype._closest = function (key, cb) {
 }
 
 DB.prototype.put = function (key, value, cb) {
+  if (this._parent) return process.nextTick(cb || noop, new Error('Cannot write to a checkout'))
   var self = this
 
   this._lock(function (release) {
@@ -466,6 +518,55 @@ DB.prototype._visitPut = function (key, path, i, j, k, node, heads, trie, batch,
 function getBatch (self, w, batch, seq, cb) {
   if (!batch || self._localWriter !== w || seq < w.feed.length) return w.get(seq, cb)
   process.nextTick(cb, null, batch[seq - w.feed.length])
+}
+
+DB.prototype._openCheckout = function (cb) {
+  var self = this
+
+  this._parent.ready(function (err) {
+    if (err) return cb(err)
+    self.source = self._parent.source
+    self.key = self._parent.key
+    self.discoveryKey = self._parent.discoveryKey
+    self.local = self._parent.local
+    self._writers = self._parent._writers
+    self._localWriter = self._parent._localWriter
+
+    var error = null
+    var missing = self._checkout.length
+    var result = []
+    if (!missing) return cb(null)
+
+    for (var i = 0; i < self._checkout.length; i++) {
+      var c = self._checkout[i]
+      var next = onnode(i)
+      var feed = getFeed(c.key)
+      if (!feed) {
+        next(new Error('Invalid version'))
+      } else {
+        feed.get(c.seq, next)
+      }
+    }
+
+    function onnode (i) {
+      return function (err, node) {
+        if (err) error = err
+        else result[i] = node
+        if (--missing) return
+        self._heads = result
+        cb(error)
+      }
+    }
+
+    function getFeed (key) {
+      for (var i = 0; i < self._writers.length; i++) {
+        if (self._writers[i].key.toString('hex') === key.toString('hex')) {
+          return self._writers[i]
+        }
+      }
+      return null
+    }
+  })
 }
 
 DB.prototype._open = function (cb) {
