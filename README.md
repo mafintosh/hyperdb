@@ -77,7 +77,7 @@ Insert a new value. Will merge any previous values seen for this key.
 
 #### `db.batch(batch, [callback])`
 
-Insert a batch of values efficiently. A batch should be an array of objects that look like this:
+Insert a batch of values efficiently, in a single atomic transaction. A batch should be an array of objects that look like this:
 
 ``` js
 {
