@@ -321,6 +321,32 @@ tape('3 feeds: start version', function (t) {
   })
 })
 
+tape('live stream: 1 feed, 1 value', function (t) {
+  var db = create.one()
+
+  t.plan(6)
+
+  var n = 2
+
+  var hs = db.createHistoryStream({live: true})
+  db.put('/a', '2', function (err) {
+    t.error(err, 'no error')
+    db.put('/foo/bar', 'quux', function (err) {
+      t.error(err, 'no error')
+      hs.on('data', function (node) {
+        n--
+        if (n === 1) {
+          t.equals(node.key, '/a')
+          t.equals(node.value, '2')
+        } else if (n === 0) {
+          t.equals(node.key, '/foo/bar')
+          t.equals(node.value, 'quux')
+        }
+      })
+    })
+  })
+})
+
 function collect (stream, cb) {
   var res = []
   stream.on('data', res.push.bind(res))
