@@ -959,6 +959,7 @@ DB.prototype.createHistoryStream = function (opts, start) {
   }
 
   var self = this
+  var atFront = false  // whether the live stream has reached real-time
 
   // Populate 'nodes' with first entry in each writer
   var nodes = []
@@ -990,9 +991,30 @@ DB.prototype.createHistoryStream = function (opts, start) {
         else if (a.seq <= b.clock[a.feed]) return a
         else return b
       }, null)
-    stream.push(oldest)
 
-    if (!oldest) return
+    // Avoid ending the stream with a null value if live
+    if (!opts.live || oldest !== null) stream.push(oldest)
+
+    if (!oldest) {
+      if (opts.live) {
+        atFront = true
+        self.on('append', function (feed) {
+          var writer = self._writers.reduce(function (w1, w2) {
+            if (w1 && w1.key.equals(feed.key)) return w1
+            else if (w2.key.equals(feed.key)) return w2
+          }, null)
+          if (writer) {
+            writer.head(function (err, node) {
+              nodes[node.feed] = node
+              work()
+            })
+          } else {
+            throw new Error('THIS SHOULD NEVER HAPPEN')
+          }
+        })
+      }
+      return
+    }
 
     if (oldest.seq === self._writers[oldest.feed].feed.length - 1) {
       nodes[oldest.feed] = null
