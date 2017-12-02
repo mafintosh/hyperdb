@@ -929,7 +929,13 @@ DB.prototype._visitTrie = function (key, path, node, heads, halt, visited, cb, t
   }
 }
 
-DB.prototype.createHistoryStream = function (start) {
+DB.prototype.createHistoryStream = function (opts, start) {
+  if (Buffer.isBuffer(opts) && !start) {
+    start = opts
+    opts = {}
+  }
+  opts = opts || {}
+
   var stream = new Readable({objectMode: true})
   stream._read = noop
 
