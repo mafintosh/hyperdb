@@ -982,11 +982,6 @@ DB.prototype.createHistoryStream = function (opts, start) {
   if (!--pending) work()
 
   function work () {
-    if (!nodes.length) {
-      stream.push(null)
-      return
-    }
-
     var oldest = nodes.reduce(
       function (a, b) {
         if (!a && !b) return null
@@ -994,7 +989,7 @@ DB.prototype.createHistoryStream = function (opts, start) {
         else if (!b) return a
         else if (a.seq <= b.clock[a.feed]) return a
         else return b
-      })
+      }, null)
     stream.push(oldest)
 
     if (!oldest) return
