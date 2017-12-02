@@ -929,21 +929,6 @@ DB.prototype._visitTrie = function (key, path, node, heads, halt, visited, cb, t
   }
 }
 
-/*
- * _writer is emitted when a new writer is added
- * the order of clock and  the order of _writers are the same
- * so ...
- * your logic should be something like this:
- * var nodes = [firstNodeInWriter1, firstNodeInWriter2, ...]
- * on('_writer', => addFirstNode to nodes[this._writers.indexOf(writer))
- * given that array of nodes you want to find the *oldest* one
- * thats prob a reduce right
- * oldest (a, b) => if (a.seq < b.clock[a.feed]) return a; else b
- * pick oldest, emit that node next
- * the replace node with the writers[node.feed].get(++node.seq)
- * repeat
-*/
-
 DB.prototype.createHistoryStream = function (start) {
   var stream = new Readable({objectMode: true})
   stream._read = noop
@@ -958,13 +943,11 @@ DB.prototype.createHistoryStream = function (start) {
     if (!startHeads) {
       return 0
     } else {
-      console.log('sh', key, startHeads)
       for (var i = 0; i < startHeads.length; i++) {
         if (startHeads[i].key.equals(key)) {
           return startHeads[i].seq + 1
         }
       }
-      console.log('feed not in heads', key)
       return 0
     }
   }
@@ -978,9 +961,7 @@ DB.prototype.createHistoryStream = function (start) {
     if (this._writers[i].feed.length > 0) {
       (function (n) {
         var seq = getStartSeq(self._writers[n].key)
-        console.log('seq', n, seq, self._writers[n].feed.length)
         if (seq >= self._writers[n].feed.length) {
-          console.log('bail; at end')
           if (!--pending) work()
           return
         }
@@ -1008,7 +989,6 @@ DB.prototype.createHistoryStream = function (start) {
         else if (a.seq <= b.clock[a.feed]) return a
         else return b
       })
-    console.log('oldest', oldest)
     stream.push(oldest)
 
     if (!oldest) return
@@ -1019,7 +999,6 @@ DB.prototype.createHistoryStream = function (start) {
     }
 
     self._writers[oldest.feed].get(oldest.seq + 1, function (err, newNode) {
-      // console.log('get', err, newNode)
       if (err) return cb(err)
       nodes[oldest.feed] = newNode
       work()
