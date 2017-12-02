@@ -151,11 +151,15 @@ that occured between `checkout` and `head`. When multiple feeds conflict for the
 value of a key at a point in time, `nodes` will have multiple entries. `<node>`
 is the full hyperdb node.
 
-#### `var stream = db.createHistoryStream([start])
+#### `var stream = db.createHistoryStream([opts, ][start])
 
 Returns a readable stream of node objects covering all historic values since
 either the [version](#dbversioncallback) `start`. If not specified, history is
 traversed from the beginning of time.
+
+Valid opts include:
+
+- `opts.live`: whether this is a live history stream. If so, the stream will never terminate on its own and will continue emitting nodes in real-time as they are added to the database.
 
 Nodes are emitted in topographic order, meaning if value `v2` was aware of value
 `v1` at its insertion time, `v1` must be emitted before `v2`.
