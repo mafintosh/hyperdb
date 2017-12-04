@@ -377,9 +377,59 @@ tape('live stream: 1 feed, start version', function (t) {
   })
 })
 
+tape('2 feeds: live', function (t) {
+  create.two(function (a, b) {
+    var hsA = a.createHistoryStream({live: true})
+    var hsB = b.createHistoryStream({live: true})
+
+    a.put('/a', 'a', function (err) {
+      t.ifError(err)
+      b.put('/a', 'b', function (err) {
+        t.ifError(err)
+        a.put('/a', 'c', function (err) {
+          t.ifError(err)
+          // replicate(a, b, function () {
+            validate()
+          // })
+        })
+      })
+    })
+
+    function validate () {
+      collectN(hsA, 3, function (err, actual) {
+        t.error(err, 'no error')
+        t.equals(actual.length, 3)
+        t.equals(actual[0].feed + ',' + actual[0].seq, '0,0')
+        t.equals(actual[1].feed + ',' + actual[1].seq, '0,1')
+        t.equals(actual[2].feed + ',' + actual[2].seq, '0,2')
+
+        collectN(hsB, 1, function (err, actual) {
+          t.error(err, 'no error')
+          t.equals(actual.length, 1)
+          t.equals(actual[0].feed + ',' + actual[0].seq, '1,0')
+          t.end()
+        })
+      })
+    }
+  })
+})
+
 function collect (stream, cb) {
   var res = []
   stream.on('data', res.push.bind(res))
   stream.once('error', cb)
   stream.once('end', cb.bind(null, null, res))
 }
+
+function collectN (stream, expected, cb) {
+  var res = []
+  stream.on('data', function (node) {
+    if (expected <= 0) {
+      return stream.emit('error', new Error('extra entries emitted'))
+    }
+    res.push(node)
+    if (!--expected) cb(null, res)
+  })
+  stream.once('error', cb)
+}
+
