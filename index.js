@@ -929,11 +929,7 @@ DB.prototype._visitTrie = function (key, path, node, heads, halt, visited, cb, t
   }
 }
 
-DB.prototype.createHistoryStream = function (opts, start) {
-  if (Buffer.isBuffer(opts) && !start) {
-    start = opts
-    opts = {}
-  }
+DB.prototype.createHistoryStream = function (opts) {
   opts = opts || {}
 
   var stream = new Readable({objectMode: true})
@@ -943,7 +939,7 @@ DB.prototype.createHistoryStream = function (opts, start) {
     stream.emit('error', err)
   }
 
-  var startHeads = start ? versionToHeads(start) : null
+  var startHeads = opts.start ? versionToHeads(opts.start) : null
 
   function getStartSeq (key) {
     if (!startHeads) {
@@ -996,7 +992,7 @@ DB.prototype.createHistoryStream = function (opts, start) {
     if (!opts.live || oldest !== null) stream.push(oldest)
 
     if (!oldest) {
-      if (opts.live) {
+      if (!atFront && opts.live) {
         atFront = true
         self.on('append', function (feed) {
           var writer = self._writers.reduce(function (w1, w2) {
@@ -1005,6 +1001,7 @@ DB.prototype.createHistoryStream = function (opts, start) {
           }, null)
           if (writer) {
             writer.head(function (err, node) {
+              if (err) return cb(err)
               nodes[node.feed] = node
               work()
             })
