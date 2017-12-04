@@ -1,6 +1,6 @@
 # hyperdb
 
-Distributed scalable database.
+> Distributed scalable database.
 
 ```
 npm install hyperdb
@@ -154,11 +154,11 @@ is the full hyperdb node.
 #### `var stream = db.createHistoryStream([opts, ][start])
 
 Returns a readable stream of node objects covering all historic values since
-either the [version](#dbversioncallback) `start`. If not specified, history is
-traversed from the beginning of time.
+either the beginning of time, or the [version](#dbversioncallback) `opts.start.
 
 Valid opts include:
 
+- `opts.start`: Use this version at the starting point for historic traversal.
 - `opts.live`: whether this is a live history stream. If so, the stream will never terminate on its own and will continue emitting nodes in real-time as they are added to the database.
 
 Nodes are emitted in topographic order, meaning if value `v2` was aware of value
