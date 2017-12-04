@@ -196,7 +196,7 @@ tape('1 feed: start version', function (t) {
       t.error(err, 'no error')
       db.put('/b/0', 'boop', function (err) {
         t.error(err, 'no error')
-        var rs = db.createHistoryStream(version)
+        var rs = db.createHistoryStream({start: version})
         collect(rs, function (err, actual) {
           t.error(err, 'no error')
           t.equals(actual.length, 1)
@@ -238,14 +238,14 @@ tape('2 feeds: start version', function (t) {
     })
 
     function validate () {
-      var rs = a.createHistoryStream(start1)
+      var rs = a.createHistoryStream({start: start1})
       collect(rs, function (err, actual) {
         t.error(err, 'no error')
         t.equals(actual.length, 2)
         t.equals(actual[0].feed + ',' + actual[0].seq, '1,0')
         t.equals(actual[1].feed + ',' + actual[1].seq, '0,2')
 
-        var rs = a.createHistoryStream(start2)
+        var rs = a.createHistoryStream({start: start2})
         collect(rs, function (err, actual) {
           t.error(err, 'no error')
           t.equals(actual.length, 1)
@@ -294,7 +294,7 @@ tape('3 feeds: start version', function (t) {
     })
 
     function validate () {
-      var rs = a.createHistoryStream(start1)
+      var rs = a.createHistoryStream({start: start1})
       collect(rs, function (err, actual) {
         t.error(err, 'no error')
         t.equals(actual.length, 4)
@@ -303,12 +303,12 @@ tape('3 feeds: start version', function (t) {
         t.equals(actual[2].feed + ',' + actual[2].seq, '1,1')
         t.equals(actual[3].feed + ',' + actual[3].seq, '0,2')
 
-        var rs = b.createHistoryStream(start2)
+        var rs = b.createHistoryStream({start: start2})
         collect(rs, function (err, actual) {
           t.error(err, 'no error')
           t.equals(actual.length, 0)
 
-          var rs = c.createHistoryStream(start3)
+          var rs = c.createHistoryStream({start: start3})
           collect(rs, function (err, actual) {
             t.error(err, 'no error')
             t.equals(actual.length, 1)
@@ -321,11 +321,10 @@ tape('3 feeds: start version', function (t) {
   })
 })
 
-tape('live stream: 1 feed, 1 value', function (t) {
-  var db = create.one()
-
+tape('live stream: 1 feed', function (t) {
   t.plan(6)
 
+  var db = create.one()
   var n = 2
 
   var hs = db.createHistoryStream({live: true})
@@ -342,6 +341,37 @@ tape('live stream: 1 feed, 1 value', function (t) {
           t.equals(node.key, '/foo/bar')
           t.equals(node.value, 'quux')
         }
+      })
+    })
+  })
+})
+
+tape('live stream: 1 feed, start version', function (t) {
+  t.plan(8)
+
+  var db = create.one()
+  var n = 2
+
+  db.put('/a', '2', function (err) {
+    t.error(err, 'no error')
+    db.version(function (err, version) {
+      t.error(err, 'no error')
+      var hs = db.createHistoryStream({live: true, start: version})
+      db.put('/foo/bar', 'quux', function (err) {
+        t.error(err, 'no error')
+        db.put('/a', '17', function (err) {
+          t.error(err, 'no error')
+          hs.on('data', function (node) {
+            n--
+            if (n === 1) {
+              t.equals(node.key, '/foo/bar')
+              t.equals(node.value, 'quux')
+            } else if (n === 0) {
+              t.equals(node.key, '/a')
+              t.equals(node.value, '17')
+            }
+          })
+        })
       })
     })
   })
