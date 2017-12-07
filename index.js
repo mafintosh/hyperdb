@@ -959,22 +959,24 @@ DB.prototype.createHistoryStream = function (opts) {
 
   // Populate 'nodes' with first entry in each writer
   var nodes = []
+  var seqs = []
   var pending = this._writers.length + 1
   for (var i = 0; i < this._writers.length; i++) {
-    if (this._writers[i].feed.length > 0) {
-      (function (n) {
-        var seq = getStartSeq(self._writers[n].key)
-        if (seq >= self._writers[n].feed.length) {
-          if (!--pending) work()
-          return
-        }
-        self._writers[n].get(seq, function (err, node) {
-          if (err) return cb(err)
-          nodes[n] = node
-          if (!--pending) work()
-        })
-      })(i)
-    } else if (!--pending) work()
+    (function (n) {
+      var seq = getStartSeq(self._writers[n].key)
+      if (seq >= self._writers[n].feed.length) {
+        nodes[n] = null
+        seqs[n] = seq - 1
+        if (!--pending) work()
+        return
+      }
+      self._writers[n].get(seq, function (err, node) {
+        if (err) return cb(err)
+        nodes[n] = node
+        seqs[n] = node.seq
+        if (!--pending) work()
+      })
+    })(i)
   }
   if (!--pending) work()
 
@@ -993,22 +995,43 @@ DB.prototype.createHistoryStream = function (opts) {
 
     if (!oldest) {
       if (!atFront && opts.live) {
+        // TODO(noffle): pretty hacky ugly code; clean er up!
         atFront = true
-        self.on('append', function (feed) {
-          var writer = self._writers.reduce(function (w1, w2) {
-            if (w1 && w1.key.equals(feed.key)) return w1
-            else if (w2.key.equals(feed.key)) return w2
-          }, null)
-          if (writer) {
-            writer.head(function (err, node) {
-              if (err) return cb(err)
-              nodes[node.feed] = node
+        self.on('_writer', onwriter)
+        function onwriter (writer) {
+          writer.head(function (node) {
+            if (node) {
+              nodes[writer.id] = node
+              seqs[writer.id] = node.seq
+              self.removeListener('append', onappend)
+              self.removeListener('_writer', onwriter)
+              atFront = false
               work()
-            })
-          } else {
-            throw new Error('THIS SHOULD NEVER HAPPEN')
+            }
+          })
+        }
+        self.on('append', onappend)
+        function onappend (feed) {
+          atFront = false
+          for (var i = 0; i < self._writers.length; i++) {
+            var writer = self._writers[i]
+            if (writer.key.equals(feed.key)) {
+              var nextSeq = Number.isInteger(seqs[i]) ? seqs[i] + 1 : 0
+              ;(function (n) {
+                writer.get(nextSeq, function (err, latest) {
+                  if (err) return cb(err)
+                  nodes[n] = latest
+                  seqs[n] = latest.seq
+                  self.removeListener('append', onappend)
+                  self.removeListener('_writer', onwriter)
+                  atFront = false
+                  work()
+                })
+              })(i)
+              break
+            }
           }
-        })
+        }
       }
       return
     }
@@ -1021,6 +1044,7 @@ DB.prototype.createHistoryStream = function (opts) {
     self._writers[oldest.feed].get(oldest.seq + 1, function (err, newNode) {
       if (err) return cb(err)
       nodes[oldest.feed] = newNode
+      seqs[oldest.feed] = newNode.seq
       work()
     })
   }
