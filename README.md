@@ -125,17 +125,12 @@ db.watch('/foo/bar', function () {
 db.put('/foo/bar/baz', 'hi') // triggers the above
 ```
 
-#### `db.snapshot(cb)`
-
-Return an object capturing the current state of `db` via the callback `cb` as
-`function (err, at)`. This object `at` can be passed into `db.createDiffStream`.
-
 #### `var stream = db.createDiffStream(key[, checkout][, head])`
 
-Find out about changes in key/value pairs between the snapshot `checkout` and
+Find out about changes in key/value pairs between the version `checkout` and
 `head` for all keys prefixed by `key`.
 
-`checkout` and `head` are snapshots to use to compare against. If not provided,
+`checkout` and `head` are versions to use to compare against. If not provided,
 `head is the current HEAD of the database, and `checkout` is the beginning of
 time.
 

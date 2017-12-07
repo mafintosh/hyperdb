@@ -34,7 +34,7 @@ tape('implicit checkout', function (t) {
 tape('new value', function (t) {
   var db = create.one()
 
-  db.snapshot(function (err, co) {
+  db.version(function (err, co) {
     t.error(err, 'no error')
     db.put('/a', '2', function (err) {
       t.error(err, 'no error')
@@ -55,7 +55,7 @@ tape('new value', function (t) {
 tape('two new nodes', function (t) {
   var db = create.one()
 
-  db.snapshot(function (err, co) {
+  db.version(function (err, co) {
     t.error(err, 'no error')
     db.put('/a/foo', 'quux', function (err) {
       t.error(err, 'no error')
@@ -83,11 +83,11 @@ tape('two new nodes', function (t) {
 tape('set head', function (t) {
   var db = create.one()
 
-  db.snapshot(function (err, co1) {
+  db.version(function (err, co1) {
     t.error(err, 'no error')
     db.put('/a/foo', 'quux', function (err) {
       t.error(err, 'no error')
-      db.snapshot(function (err, co2) {
+      db.version(function (err, co2) {
         t.error(err, 'no error')
         db.put('/a/bar', 'baz', function (err) {
           t.error(err, 'no error')
@@ -112,11 +112,11 @@ tape('set head 2', function (t) {
 
   db.put('/a/foo', 'quux', function (err) {
     t.error(err, 'no error')
-    db.snapshot(function (err, co1) {
+    db.version(function (err, co1) {
       t.error(err, 'no error')
       db.put('/a/bar', 'baz', function (err) {
         t.error(err, 'no error')
-        db.snapshot(function (err, co2) {
+        db.version(function (err, co2) {
           t.error(err, 'no error')
           var rs = db.createDiffStream('/a', co1, co2)
           collect(rs, function (err, actual) {
@@ -139,7 +139,7 @@ tape('checkout === head', function (t) {
 
   db.put('/a', '2', function (err) {
     t.error(err, 'no error')
-    db.snapshot(function (err, co) {
+    db.version(function (err, co) {
       t.error(err, 'no error')
       var rs = db.createDiffStream('/a', co)
       collect(rs, function (err, actual) {
@@ -154,7 +154,7 @@ tape('checkout === head', function (t) {
 tape('new value, twice', function (t) {
   var db = create.one()
 
-  db.snapshot(function (err, co) {
+  db.version(function (err, co) {
     t.error(err, 'no error')
     db.put('/a', '1', function (err) {
       t.error(err, 'no error')
@@ -180,7 +180,7 @@ tape('untracked value', function (t) {
 
   db.put('/a', '1', function (err) {
     t.error(err, 'no error')
-    db.snapshot(function (err, co) {
+    db.version(function (err, co) {
       t.error(err, 'no error')
       db.put('/a', '2', function (err) {
         t.error(err, 'no error')
@@ -211,7 +211,7 @@ tape('diff root', function (t) {
 
   db.put('/a', '1', function (err) {
     t.error(err, 'no error')
-    db.snapshot(function (err, co) {
+    db.version(function (err, co) {
       t.error(err, 'no error')
       db.put('/a', '2', function (err) {
         t.error(err, 'no error')
@@ -246,7 +246,7 @@ tape('updated value', function (t) {
 
   db.put('/a/d/r', '1', function (err) {
     t.error(err, 'no error')
-    db.snapshot(function (err, co) {
+    db.version(function (err, co) {
       t.error(err, 'no error')
       db.put('/a/d/r', '3', function (err) {
         t.error(err, 'no error')

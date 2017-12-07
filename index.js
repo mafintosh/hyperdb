@@ -756,6 +756,25 @@ DB.prototype._visitGet = function (key, path, i, node, heads, result, onvisit, c
 DB.prototype.createDiffStream = function (key, checkout, head) {
   if (!checkout) checkout = []  // Diff from the beginning
 
+  var self = this
+
+  function versionToList (version) {
+    var map = []
+    var heads = versionToHeads(version)
+    for (var i = 0; i < heads.length; i++) {
+      for (var j = 0; j < self._writers.length; j++) {
+        if (self._writers[j].key.equals(heads[i].key)) {
+          map[j] = heads[i].seq
+          break
+        }
+      }
+    }
+    return map
+  }
+
+  if (checkout.length) checkout = versionToList(checkout)
+  if (head) head = versionToList(head)
+
   var stream = new Readable({objectMode: true})
   stream._read = noop
 
@@ -763,7 +782,6 @@ DB.prototype.createDiffStream = function (key, checkout, head) {
     stream.emit('error', err)
   }
 
-  var self = this
   var path = hash(key, true)
   var missing = 2
 
@@ -849,20 +867,6 @@ DB.prototype.createDiffStream = function (key, checkout, head) {
   }
 
   return stream
-}
-
-DB.prototype.snapshot = function (cb) {
-  this.heads(function (err, heads) {
-    if (err) return cb(err)
-    if (!heads.length) return cb(null, [])
-
-    var result = {}
-    for (var i = 0; i < heads.length; i++) {
-      result[heads[i].feed] = heads[i].seq
-    }
-
-    cb(null, result)
-  })
 }
 
 DB.prototype._visitTrie = function (key, path, node, heads, halt, visited, cb, type) {
