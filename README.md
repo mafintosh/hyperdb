@@ -1,6 +1,6 @@
 # hyperdb
 
-> Distributed scalable database.
+Distributed scalable database.
 
 ```
 npm install hyperdb
