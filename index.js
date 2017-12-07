@@ -932,6 +932,8 @@ DB.prototype._visitTrie = function (key, path, node, heads, halt, visited, cb, t
 DB.prototype.createHistoryStream = function (opts) {
   opts = opts || {}
 
+  var self = this
+
   var stream = new Readable({objectMode: true})
   stream._read = noop
 
@@ -939,49 +941,20 @@ DB.prototype.createHistoryStream = function (opts) {
     stream.emit('error', err)
   }
 
-  var startHeads = opts.start ? versionToHeads(opts.start) : null
-
-  function getStartSeq (key) {
-    if (!startHeads) {
-      return 0
-    } else {
-      for (var i = 0; i < startHeads.length; i++) {
-        if (startHeads[i].key.equals(key)) {
-          return startHeads[i].seq + 1
-        }
-      }
-      return 0
-    }
-  }
-
-  var self = this
-  var atFront = false  // whether the live stream has reached real-time
-
-  // Populate 'nodes' with first entry in each writer
   var nodes = []
   var seqs = []
-  var pending = this._writers.length + 1
-  for (var i = 0; i < this._writers.length; i++) {
-    (function (n) {
-      var seq = getStartSeq(self._writers[n].key)
-      if (seq >= self._writers[n].feed.length) {
-        nodes[n] = null
-        seqs[n] = seq - 1
-        if (!--pending) work()
-        return
-      }
-      self._writers[n].get(seq, function (err, node) {
-        if (err) return cb(err)
-        nodes[n] = node
-        seqs[n] = node.seq
-        if (!--pending) work()
-      })
-    })(i)
-  }
-  if (!--pending) work()
+  var atFront = false  // whether the live stream has reached real-time
 
-  function work () {
-    var oldest = nodes.reduce(
+  // Populate 'nodes' and 'seq' with first entry in each writer
+  initTraversal(function (err, theNodes, theSeqs) {
+    if (err) return cb(err)
+    nodes = theNodes
+    seqs = theSeqs
+    traverseNode()
+  })
+
+  function traverseNode () {
+    var next = nodes.reduce(
       function (a, b) {
         if (!a && !b) return null
         else if (!a) return b
@@ -990,63 +963,106 @@ DB.prototype.createHistoryStream = function (opts) {
         else return b
       }, null)
 
-    // Avoid ending the stream with a null value if live
-    if (!opts.live || oldest !== null) stream.push(oldest)
+    // Avoid ending the stream with a null value if opts.live
+    if (!opts.live || next !== null) stream.push(next)
 
-    if (!oldest) {
-      if (!atFront && opts.live) {
-        // TODO(noffle): pretty hacky ugly code; clean er up!
-        atFront = true
-        self.on('_writer', onwriter)
-        function onwriter (writer) {
-          writer.head(function (node) {
-            if (node) {
-              nodes[writer.id] = node
-              seqs[writer.id] = node.seq
-              self.removeListener('append', onappend)
-              self.removeListener('_writer', onwriter)
-              atFront = false
-              work()
-            }
-          })
-        }
-        self.on('append', onappend)
-        function onappend (feed) {
-          atFront = false
-          for (var i = 0; i < self._writers.length; i++) {
-            var writer = self._writers[i]
-            if (writer.key.equals(feed.key)) {
-              var nextSeq = Number.isInteger(seqs[i]) ? seqs[i] + 1 : 0
-              ;(function (n) {
-                writer.get(nextSeq, function (err, latest) {
-                  if (err) return cb(err)
-                  nodes[n] = latest
-                  seqs[n] = latest.seq
-                  self.removeListener('append', onappend)
-                  self.removeListener('_writer', onwriter)
-                  atFront = false
-                  work()
-                })
-              })(i)
-              break
-            }
-          }
-        }
-      }
+    // No new nodes to traverse
+    if (!next) {
+      // Stream has ended
+      if (atFront || !opts.live) return
+
+      // Stop traversal; set up event listeners; wait
+      atFront = true
+      self.on('_writer', onWriter)
+      self.on('append', onAppend)
       return
     }
 
-    if (oldest.seq === self._writers[oldest.feed].feed.length - 1) {
-      nodes[oldest.feed] = null
-      return work()
+    if (next.seq === self._writers[next.feed].feed.length - 1) {
+      nodes[next.feed] = null
+      return traverseNode()
     }
 
-    self._writers[oldest.feed].get(oldest.seq + 1, function (err, newNode) {
+    self._writers[next.feed].get(next.seq + 1, function (err, newNode) {
       if (err) return cb(err)
-      nodes[oldest.feed] = newNode
-      seqs[oldest.feed] = newNode.seq
-      work()
+      nodes[next.feed] = newNode
+      seqs[next.feed] = newNode.seq
+      traverseNode()
     })
+  }
+
+  function getStartSeq (heads, key) {
+    if (!heads) {
+      return 0
+    } else {
+      for (var i = 0; i < heads.length; i++) {
+        if (heads[i].key.equals(key)) {
+          return heads[i].seq + 1
+        }
+      }
+      return 0
+    }
+  }
+
+  function initTraversal (cb) {
+    var startHeads = opts.start ? versionToHeads(opts.start) : null
+    var nodes = []
+    var seqs = []
+
+    var pending = self._writers.length + 1
+    for (var i = 0; i < self._writers.length; i++) {
+      (function (n) {
+        var seq = getStartSeq(startHeads, self._writers[n].key)
+        if (seq >= self._writers[n].feed.length) {
+          nodes[n] = null
+          seqs[n] = seq - 1
+          if (!--pending) cb(null, nodes, seqs)
+          return
+        }
+        self._writers[n].get(seq, function (err, node) {
+          if (err) return cb(err)
+          nodes[n] = node
+          seqs[n] = node.seq
+          if (!--pending) cb(null, nodes, seqs)
+        })
+      })(i)
+    }
+    if (!--pending) cb(null, nodes, seqs)
+  }
+
+  function resumeTraversal () {
+    self.removeListener('append', onAppend)
+    self.removeListener('_writer', onWriter)
+    atFront = false
+    traverseNode()
+  }
+
+  function onWriter (writer) {
+    writer.head(function (node) {
+      if (node) {
+        nodes[writer.id] = node
+        seqs[writer.id] = node.seq
+        resumeTraversal()
+      }
+    })
+  }
+
+  function onAppend (feed) {
+    for (var i = 0; i < self._writers.length; i++) {
+      var writer = self._writers[i]
+      if (writer.key.equals(feed.key)) {
+        var nextSeq = Number.isInteger(seqs[i]) ? seqs[i] + 1 : 0
+        ;(function (n) {
+          writer.get(nextSeq, function (err, latest) {
+            if (err) return cb(err)
+            nodes[n] = latest
+            seqs[n] = latest.seq
+            resumeTraversal()
+          })
+        })(i)
+        break
+      }
+    }
   }
 
   return stream
