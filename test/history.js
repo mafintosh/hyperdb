@@ -438,6 +438,52 @@ tape('2 feeds: live', function (t) {
   })
 })
 
+tape('2 feeds: live + 3rd feed added', function (t) {
+  create.two(function (a, b) {
+    var hs = a.createHistoryStream({live: true})
+    var c = create.one(a.key)
+
+    a.put('/a', 'a', function (err) {
+      t.ifError(err)
+      b.put('/a', 'b', function (err) {
+        t.ifError(err)
+        replicate(a, b, function () {
+          c.put('/foo/bar', 'bax', function (err) {
+            t.ifError(err)
+            a.authorize(c.local.key, function (err) {
+              t.ifError(err)
+              c.put('/a', 'c', function (err) {
+                t.ifError(err)
+                replicate(a, c, function () {
+                  a.put('/foo/bar', 'box', function (err) {
+                    t.ifError(err)
+                    validate()
+                  })
+                })
+              })
+            })
+          })
+        })
+      })
+    })
+
+    function validate () {
+      collectN(hs, 7, function (err, actual) {
+        t.error(err, 'no error')
+        t.equals(actual.length, 7)
+        t.equals(actual[0].feed + ',' + actual[0].seq, '0,0')
+        t.equals(actual[1].feed + ',' + actual[1].seq, '0,1')
+        t.equals(actual[2].feed + ',' + actual[2].seq, '1,0')
+        t.equals(actual[3].feed + ',' + actual[3].seq, '0,2')
+        t.equals(actual[4].feed + ',' + actual[4].seq, '2,0')
+        t.equals(actual[5].feed + ',' + actual[5].seq, '2,1')
+        t.equals(actual[6].feed + ',' + actual[6].seq, '0,3')
+        t.end()
+      })
+    }
+  })
+})
+
 function collect (stream, cb) {
   var res = []
   stream.on('data', res.push.bind(res))
