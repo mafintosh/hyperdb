@@ -271,3 +271,40 @@ tape('batch', function (t) {
     })
   }
 })
+
+tape('createWriteStream', function (t) {
+  t.plan(10)
+  var db = create.one()
+  var writer = db.createWriteStream()
+
+  writer.write([{
+    type: 'put',
+    key: 'foo',
+    value: 'foo'
+  }, {
+    type: 'put',
+    key: 'bar',
+    value: 'bar'
+  }])
+
+  writer.write({
+    type: 'put',
+    key: 'baz',
+    value: 'baz'
+  })
+
+  writer.end(function (err) {
+    t.error(err, 'no error')
+    same('foo', 'foo')
+    same('bar', 'bar')
+    same('baz', 'baz')
+  })
+
+  function same (key, val) {
+    db.get(key, function (err, node) {
+      t.error(err, 'no error')
+      t.same(node.key, key)
+      t.same(node.value, val)
+    })
+  }
+})

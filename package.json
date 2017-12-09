@@ -5,6 +5,7 @@
   "main": "index.js",
   "dependencies": {
     "array-lru": "^1.1.1",
+    "bulk-write-stream": "^1.1.3",
     "codecs": "^1.2.0",
     "hypercore": "^6.9.0",
     "hypercore-protocol": "^6.4.0",
