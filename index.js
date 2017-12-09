@@ -977,8 +977,8 @@ DB.prototype.createHistoryStream = function (opts) {
 
       // Stop traversal; set up event listeners; wait
       atFront = true
-      self.on('_writer', onWriter)
-      self.on('append', onAppend)
+      self.once('_writer', onWriter)
+      self.once('append', onAppend)
       return
     }
 
@@ -1035,23 +1035,28 @@ DB.prototype.createHistoryStream = function (opts) {
   }
 
   function resumeTraversal () {
-    self.removeListener('append', onAppend)
-    self.removeListener('_writer', onWriter)
     atFront = false
     traverseNode()
   }
 
   function onWriter (writer) {
+    self.removeListener('append', onAppend)
+    self.removeListener('_writer', onWriter)
     writer.head(function (node) {
       if (node) {
         nodes[writer.id] = node
         seqs[writer.id] = node.seq
         resumeTraversal()
+      } else {
+        self.once('_writer', onWriter)
+        self.once('append', onAppend)
       }
     })
   }
 
   function onAppend (feed) {
+    self.removeListener('append', onAppend)
+    self.removeListener('_writer', onWriter)
     for (var i = 0; i < self._writers.length; i++) {
       var writer = self._writers[i]
       if (writer.key.equals(feed.key)) {
@@ -1064,9 +1069,11 @@ DB.prototype.createHistoryStream = function (opts) {
             resumeTraversal()
           })
         })(i)
-        break
+        return
       }
     }
+    self.once('_writer', onWriter)
+    self.once('append', onAppend)
   }
 
   return stream
