@@ -87,6 +87,12 @@ Insert a batch of values efficiently, in a single atomic transaction. A batch sh
 }
 ```
 
+#### `var stream = db.createWriteStream()`
+
+Create a writable stream.
+
+Where `stream.write(data)` accepts data as an object or an array of objects with the same form as `db.batch()`.
+
 #### `db.get(key, callback)`
 
 Lookup a string `key`. Returns a nodes array with the current values for this key.
