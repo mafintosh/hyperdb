@@ -142,14 +142,14 @@ time.
 `stream` is a readable object stream that outputs modifications like
 
 ```js
-{ type: 'del', name: '/a', values: [<node>] },
-{ type: 'put', name: '/a', values: [<node>, <node>] }
+{ type: 'del', name: '/a', nodes: [<node>] },
+{ type: 'put', name: '/a', nodes: [<node>, <node>] }
 { type: 'put', name: '/b/beep', value: [<node>] }
 ```
 
 that occured between `checkout` and `head`. When multiple feeds conflict for the
-value of a key at a point in time, `values` will have multiple entries. `<node>`
-is a placeholder for the full hyperdb node.
+value of a key at a point in time, `nodes` will have multiple entries. `<node>`
+is the full hyperdb node.
 
 #### `var stream = db.replicate([options])`
 
