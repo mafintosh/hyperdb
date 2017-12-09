@@ -5,12 +5,10 @@ var replicate = require('./helpers/replicate')
 tape('empty diff', function (t) {
   var db = create.one()
 
-  var expected = []
-
   var rs = db.createDiffStream('/a')
   collect(rs, function (err, actual) {
     t.error(err, 'no error')
-    t.deepEqual(actual, expected, 'diff as expected')
+    t.deepEqual(actual, [], 'diff as expected')
     t.end()
   })
 })
@@ -18,16 +16,16 @@ tape('empty diff', function (t) {
 tape('implicit checkout', function (t) {
   var db = create.one()
 
-  var expected = [
-    { type: 'put', name: '/a', value: ['2'] }
-  ]
-
   db.put('/a', '2', function (err) {
     t.error(err, 'no error')
     var rs = db.createDiffStream('/a')
     collect(rs, function (err, actual) {
       t.error(err, 'no error')
-      t.deepEqual(actual, expected, 'diff as expected')
+      t.equals(actual.length, 1)
+      t.equals(actual[0].type, 'put')
+      t.equals(actual[0].name, '/a')
+      t.equals(actual[0].nodes.length, 1)
+      t.equals(actual[0].nodes[0].value, '2')
       t.end()
     })
   })
@@ -36,10 +34,6 @@ tape('implicit checkout', function (t) {
 tape('new value', function (t) {
   var db = create.one()
 
-  var expected = [
-    { type: 'put', name: '/a', value: ['2'] }
-  ]
-
   db.snapshot(function (err, co) {
     t.error(err, 'no error')
     db.put('/a', '2', function (err) {
@@ -47,20 +41,19 @@ tape('new value', function (t) {
       var rs = db.createDiffStream('/a', co)
       collect(rs, function (err, actual) {
         t.error(err, 'no error')
-        t.deepEqual(actual, expected, 'diff as expected')
+        t.equals(actual.length, 1)
+        t.equals(actual[0].type, 'put')
+        t.equals(actual[0].name, '/a')
+        t.equals(actual[0].nodes.length, 1)
+        t.equals(actual[0].nodes[0].value, '2')
         t.end()
       })
     })
   })
 })
 
-tape('two new values', function (t) {
+tape('two new nodes', function (t) {
   var db = create.one()
-
-  var expected = [
-    { type: 'put', name: '/a/bar', value: ['baz'] },
-    { type: 'put', name: '/a/foo', value: ['quux'] }
-  ]
 
   db.snapshot(function (err, co) {
     t.error(err, 'no error')
@@ -71,7 +64,15 @@ tape('two new values', function (t) {
         var rs = db.createDiffStream('/a', co)
         collect(rs, function (err, actual) {
           t.error(err, 'no error')
-          t.deepEqual(actual, expected, 'diff as expected')
+          t.equals(actual.length, 2)
+          t.equals(actual[0].type, 'put')
+          t.equals(actual[0].name, '/a/bar')
+          t.equals(actual[0].nodes.length, 1)
+          t.equals(actual[0].nodes[0].value, 'baz')
+          t.equals(actual[1].type, 'put')
+          t.equals(actual[1].name, '/a/foo')
+          t.equals(actual[1].nodes.length, 1)
+          t.equals(actual[1].nodes[0].value, 'quux')
           t.end()
         })
       })
@@ -81,10 +82,6 @@ tape('two new values', function (t) {
 
 tape('set head', function (t) {
   var db = create.one()
-
-  var expected = [
-    { type: 'put', name: '/a/foo', value: ['quux'] }
-  ]
 
   db.snapshot(function (err, co1) {
     t.error(err, 'no error')
@@ -97,7 +94,11 @@ tape('set head', function (t) {
           var rs = db.createDiffStream('/a', co1, co2)
           collect(rs, function (err, actual) {
             t.error(err, 'no error')
-            t.deepEqual(actual, expected, 'diff as expected')
+            t.equals(actual.length, 1)
+            t.equals(actual[0].type, 'put')
+            t.equals(actual[0].name, '/a/foo')
+            t.equals(actual[0].nodes.length, 1)
+            t.equals(actual[0].nodes[0].value, 'quux')
             t.end()
           })
         })
@@ -108,10 +109,6 @@ tape('set head', function (t) {
 
 tape('set head 2', function (t) {
   var db = create.one()
-
-  var expected = [
-    { type: 'put', name: '/a/bar', value: ['baz'] }
-  ]
 
   db.put('/a/foo', 'quux', function (err) {
     t.error(err, 'no error')
@@ -124,7 +121,11 @@ tape('set head 2', function (t) {
           var rs = db.createDiffStream('/a', co1, co2)
           collect(rs, function (err, actual) {
             t.error(err, 'no error')
-            t.deepEqual(actual, expected, 'diff as expected')
+            t.equals(actual.length, 1)
+            t.equals(actual[0].type, 'put')
+            t.equals(actual[0].name, '/a/bar')
+            t.equals(actual[0].nodes.length, 1)
+            t.equals(actual[0].nodes[0].value, 'baz')
             t.end()
           })
         })
@@ -136,8 +137,6 @@ tape('set head 2', function (t) {
 tape('checkout === head', function (t) {
   var db = create.one()
 
-  var expected = []
-
   db.put('/a', '2', function (err) {
     t.error(err, 'no error')
     db.snapshot(function (err, co) {
@@ -145,7 +144,7 @@ tape('checkout === head', function (t) {
       var rs = db.createDiffStream('/a', co)
       collect(rs, function (err, actual) {
         t.error(err, 'no error')
-        t.deepEqual(actual, expected, 'diff as expected')
+        t.equals(actual.length, 0)
         t.end()
       })
     })
@@ -154,10 +153,6 @@ tape('checkout === head', function (t) {
 
 tape('new value, twice', function (t) {
   var db = create.one()
-
-  var expected = [
-    { type: 'put', name: '/a', value: ['2'] }
-  ]
 
   db.snapshot(function (err, co) {
     t.error(err, 'no error')
@@ -168,7 +163,11 @@ tape('new value, twice', function (t) {
         var rs = db.createDiffStream('/a', co)
         collect(rs, function (err, actual) {
           t.error(err, 'no error')
-          t.deepEqual(actual, expected, 'diff as expected')
+          t.equals(actual.length, 1)
+          t.equals(actual[0].type, 'put')
+          t.equals(actual[0].name, '/a')
+          t.equals(actual[0].nodes.length, 1)
+          t.equals(actual[0].nodes[0].value, '2')
           t.end()
         })
       })
@@ -178,11 +177,6 @@ tape('new value, twice', function (t) {
 
 tape('untracked value', function (t) {
   var db = create.one()
-
-  var expected = [
-    { type: 'del', name: '/a', value: ['1'] },
-    { type: 'put', name: '/a', value: ['2'] }
-  ]
 
   db.put('/a', '1', function (err) {
     t.error(err, 'no error')
@@ -195,7 +189,15 @@ tape('untracked value', function (t) {
           var rs = db.createDiffStream('/a', co)
           collect(rs, function (err, actual) {
             t.error(err, 'no error')
-            t.deepEqual(actual, expected, 'diff as expected')
+            t.equals(actual.length, 2)
+            t.equals(actual[0].type, 'del')
+            t.equals(actual[0].name, '/a')
+            t.equals(actual[0].nodes.length, 1)
+            t.equals(actual[0].nodes[0].value, '1')
+            t.equals(actual[1].type, 'put')
+            t.equals(actual[1].name, '/a')
+            t.equals(actual[1].nodes.length, 1)
+            t.equals(actual[1].nodes[0].value, '2')
             t.end()
           })
         })
@@ -206,12 +208,6 @@ tape('untracked value', function (t) {
 
 tape('diff root', function (t) {
   var db = create.one()
-
-  var expected = [
-    { type: 'put', name: '/b', value: ['17'] },
-    { type: 'del', name: '/a', value: ['1'] },
-    { type: 'put', name: '/a', value: ['2'] }
-  ]
 
   db.put('/a', '1', function (err) {
     t.error(err, 'no error')
@@ -224,7 +220,19 @@ tape('diff root', function (t) {
           var rs = db.createDiffStream('/', co)
           collect(rs, function (err, actual) {
             t.error(err, 'no error')
-            t.deepEqual(actual, expected, 'diff as expected')
+            t.equals(actual.length, 3)
+            t.equals(actual[0].type, 'put')
+            t.equals(actual[0].name, '/b')
+            t.equals(actual[0].nodes.length, 1)
+            t.equals(actual[0].nodes[0].value, '17')
+            t.equals(actual[1].type, 'del')
+            t.equals(actual[1].name, '/a')
+            t.equals(actual[1].nodes.length, 1)
+            t.equals(actual[1].nodes[0].value, '1')
+            t.equals(actual[2].type, 'put')
+            t.equals(actual[2].name, '/a')
+            t.equals(actual[2].nodes.length, 1)
+            t.equals(actual[2].nodes[0].value, '2')
             t.end()
           })
         })
@@ -236,11 +244,6 @@ tape('diff root', function (t) {
 tape('updated value', function (t) {
   var db = create.one()
 
-  var expected = [
-    { type: 'del', name: '/a/d/r', value: ['1'] },
-    { type: 'put', name: '/a/d/r', value: ['3'] }
-  ]
-
   db.put('/a/d/r', '1', function (err) {
     t.error(err, 'no error')
     db.snapshot(function (err, co) {
@@ -250,7 +253,15 @@ tape('updated value', function (t) {
         var rs = db.createDiffStream('/a', co)
         collect(rs, function (err, actual) {
           t.error(err, 'no error')
-          t.deepEqual(actual, expected, 'diff as expected')
+          t.equals(actual.length, 2)
+          t.equals(actual[0].type, 'del')
+          t.equals(actual[0].name, '/a/d/r')
+          t.equals(actual[0].nodes.length, 1)
+          t.equals(actual[0].nodes[0].value, '1')
+          t.equals(actual[1].type, 'put')
+          t.equals(actual[1].name, '/a/d/r')
+          t.equals(actual[1].nodes.length, 1)
+          t.equals(actual[1].nodes[0].value, '3')
           t.end()
         })
       })
@@ -259,10 +270,6 @@ tape('updated value', function (t) {
 })
 
 tape('basic with 2 feeds', function (t) {
-  var expected = [
-    { type: 'put', name: '/a', value: ['a'] }
-  ]
-
   create.two(function (a, b) {
     a.put('/a', 'a', function () {
       replicate(a, b, validate)
@@ -272,7 +279,11 @@ tape('basic with 2 feeds', function (t) {
       var rs = b.createDiffStream('/a')
       collect(rs, function (err, actual) {
         t.error(err, 'no error')
-        t.deepEqual(actual, expected, 'diff as expected')
+        t.equals(actual.length, 1)
+        t.equals(actual[0].type, 'put')
+        t.equals(actual[0].name, '/a')
+        t.equals(actual[0].nodes.length, 1)
+        t.equals(actual[0].nodes[0].value, 'a')
         t.end()
       })
     }
@@ -280,10 +291,6 @@ tape('basic with 2 feeds', function (t) {
 })
 
 tape('two feeds /w competing for a value', function (t) {
-  var expected = [
-    { type: 'put', name: '/a', value: ['b', 'a'] }
-  ]
-
   create.two(function (a, b) {
     a.put('/a', 'a', function () {
       b.put('/a', 'b', function () {
@@ -295,7 +302,12 @@ tape('two feeds /w competing for a value', function (t) {
       var rs = b.createDiffStream('/a')
       collect(rs, function (err, actual) {
         t.error(err, 'no error')
-        t.deepEqual(actual, expected, 'diff as expected')
+        t.equals(actual.length, 1)
+        t.equals(actual[0].type, 'put')
+        t.equals(actual[0].name, '/a')
+        t.equals(actual[0].nodes.length, 2)
+        t.equals(actual[0].nodes[0].value, 'b')
+        t.equals(actual[0].nodes[1].value, 'a')
         t.end()
       })
     }
