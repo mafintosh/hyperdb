@@ -11,6 +11,7 @@ var inherits = require('inherits')
 var toBuffer = require('to-buffer')
 var varint = require('varint')
 var Readable = require('stream').Readable
+var bulk = require('bulk-write-stream')
 var once = require('once')
 var protocol = null // lazy load on replicate
 
@@ -98,6 +99,26 @@ DB.prototype.batch = function (batch, cb) {
       release(cb, err)
     }
   })
+}
+
+DB.prototype.createWriteStream = function (cb) {
+  var self = this
+  return bulk.obj(write)
+
+  function write (batch, cb) {
+    var flattened = []
+    for (var i = 0; i < batch.length; i++) {
+      var content = batch[i]
+      if (Array.isArray(content)) {
+        for (var j = 0; j < content.length; j++) {
+          flattened.push(content[j])
+        }
+      } else {
+        flattened.push(content)
+      }
+    }
+    self.batch(flattened, cb)
+  }
 }
 
 DB.prototype.heads = function (cb) {
