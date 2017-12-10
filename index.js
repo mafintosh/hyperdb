@@ -149,17 +149,7 @@ DB.prototype.checkout = function (version, opts) {
   if (typeof version === 'string') version = toBuffer(version, 'hex')
 
   opts.parent = this
-
-  var ptr = 0
-  var heads = opts.checkout = []
-
-  while (ptr < version.length) {
-    var key = version.slice(ptr, ptr + 32)
-    ptr += 32
-    var seq = varint.decode(version, ptr)
-    ptr += varint.decode.bytes
-    heads.push({key: key, seq: seq})
-  }
+  opts.checkout = versionToHeads(version)
 
   return new DB(this._storage, null, opts)
 }
@@ -176,11 +166,12 @@ DB.prototype.version = function (cb) {
       var h = heads[i]
       var w = self._writers[h.feed]
 
-      arr.push(w.key)
-      arr.push(toBuffer(varint.encode(h.seq)))
+      arr.push({key: w.key, seq: h.seq})
     }
 
-    cb(null, Buffer.concat(arr))
+    var version = headsToVersion(arr)
+
+    cb(null, version)
   })
 }
 
@@ -765,6 +756,25 @@ DB.prototype._visitGet = function (key, path, i, node, heads, result, onvisit, c
 DB.prototype.createDiffStream = function (key, checkout, head) {
   if (!checkout) checkout = []  // Diff from the beginning
 
+  var self = this
+
+  function versionToList (version) {
+    var map = []
+    var heads = versionToHeads(version)
+    for (var i = 0; i < heads.length; i++) {
+      for (var j = 0; j < self._writers.length; j++) {
+        if (self._writers[j].key.equals(heads[i].key)) {
+          map[j] = heads[i].seq
+          break
+        }
+      }
+    }
+    return map
+  }
+
+  if (checkout.length) checkout = versionToList(checkout)
+  if (head) head = versionToList(head)
+
   var stream = new Readable({objectMode: true})
   stream._read = noop
 
@@ -772,7 +782,6 @@ DB.prototype.createDiffStream = function (key, checkout, head) {
     stream.emit('error', err)
   }
 
-  var self = this
   var path = hash(key, true)
   var missing = 2
 
@@ -860,20 +869,6 @@ DB.prototype.createDiffStream = function (key, checkout, head) {
   return stream
 }
 
-DB.prototype.snapshot = function (cb) {
-  this.heads(function (err, heads) {
-    if (err) return cb(err)
-    if (!heads.length) return cb(null, [])
-
-    var result = {}
-    for (var i = 0; i < heads.length; i++) {
-      result[heads[i].feed] = heads[i].seq
-    }
-
-    cb(null, result)
-  })
-}
-
 DB.prototype._visitTrie = function (key, path, node, heads, halt, visited, cb, type) {
   var self = this
   var missing = 0
@@ -936,6 +931,152 @@ DB.prototype._visitTrie = function (key, path, node, heads, halt, visited, cb, t
   function fin () {
     cb(null, heads)
   }
+}
+
+DB.prototype.createHistoryStream = function (opts) {
+  opts = opts || {}
+
+  var self = this
+
+  var stream = new Readable({objectMode: true})
+  stream._read = noop
+
+  function cb (err) {
+    stream.emit('error', err)
+  }
+
+  var nodes = []
+  var seqs = []
+  var atFront = false  // whether the live stream has reached real-time
+
+  // Populate 'nodes' and 'seq' with first entry in each writer
+  initTraversal(function (err, theNodes, theSeqs) {
+    if (err) return cb(err)
+    nodes = theNodes
+    seqs = theSeqs
+    traverseNode()
+  })
+
+  function traverseNode () {
+    var next = nodes.reduce(
+      function (a, b) {
+        if (!a && !b) return null
+        else if (!a) return b
+        else if (!b) return a
+        else if (a.seq <= b.clock[a.feed]) return a
+        else return b
+      }, null)
+
+    // Avoid ending the stream with a null value if opts.live
+    if (!opts.live || next !== null) stream.push(next)
+
+    // No new nodes to traverse
+    if (!next) {
+      // Stream has ended
+      if (atFront || !opts.live) return
+
+      // Stop traversal; set up event listeners; wait
+      atFront = true
+      self.once('_writer', onWriter)
+      self.once('append', onAppend)
+      return
+    }
+
+    if (next.seq === self._writers[next.feed].feed.length - 1) {
+      nodes[next.feed] = null
+      return traverseNode()
+    }
+
+    self._writers[next.feed].get(next.seq + 1, function (err, newNode) {
+      if (err) return cb(err)
+      nodes[next.feed] = newNode
+      seqs[next.feed] = newNode.seq
+      traverseNode()
+    })
+  }
+
+  function getStartSeq (heads, key) {
+    if (!heads) {
+      return 0
+    } else {
+      for (var i = 0; i < heads.length; i++) {
+        if (heads[i].key.equals(key)) {
+          return heads[i].seq + 1
+        }
+      }
+      return 0
+    }
+  }
+
+  function initTraversal (cb) {
+    var startHeads = opts.start ? versionToHeads(opts.start) : null
+    var nodes = []
+    var seqs = []
+
+    var pending = self._writers.length + 1
+    for (var i = 0; i < self._writers.length; i++) {
+      (function (n) {
+        var seq = getStartSeq(startHeads, self._writers[n].key)
+        if (seq >= self._writers[n].feed.length) {
+          nodes[n] = null
+          seqs[n] = seq - 1
+          if (!--pending) cb(null, nodes, seqs)
+          return
+        }
+        self._writers[n].get(seq, function (err, node) {
+          if (err) return cb(err)
+          nodes[n] = node
+          seqs[n] = node.seq
+          if (!--pending) cb(null, nodes, seqs)
+        })
+      })(i)
+    }
+    if (!--pending) cb(null, nodes, seqs)
+  }
+
+  function resumeTraversal () {
+    atFront = false
+    traverseNode()
+  }
+
+  function onWriter (writer) {
+    self.removeListener('append', onAppend)
+    self.removeListener('_writer', onWriter)
+    writer.head(function (node) {
+      if (node) {
+        nodes[writer.id] = node
+        seqs[writer.id] = node.seq
+        resumeTraversal()
+      } else {
+        self.once('_writer', onWriter)
+        self.once('append', onAppend)
+      }
+    })
+  }
+
+  function onAppend (feed) {
+    self.removeListener('append', onAppend)
+    self.removeListener('_writer', onWriter)
+    for (var i = 0; i < self._writers.length; i++) {
+      var writer = self._writers[i]
+      if (writer.key.equals(feed.key)) {
+        var nextSeq = Number.isInteger(seqs[i]) ? seqs[i] + 1 : 0
+        ;(function (n) {
+          writer.get(nextSeq, function (err, latest) {
+            if (err) return cb(err)
+            nodes[n] = latest
+            seqs[n] = latest.seq
+            resumeTraversal()
+          })
+        })(i)
+        return
+      }
+    }
+    self.once('_writer', onWriter)
+    self.once('append', onAppend)
+  }
+
+  return stream
 }
 
 function noop () {}
@@ -1002,4 +1143,32 @@ function isOptions (opts) {
 function sortNodes (a, b) {
   if (a.feed === b.feed) return a.seq - b.seq
   return a.feed - b.feed
+}
+
+// Buffer -> [Head]
+function versionToHeads (version) {
+  var ptr = 0
+  var heads = []
+
+  while (ptr < version.length) {
+    var key = version.slice(ptr, ptr + 32)
+    ptr += 32
+    var seq = varint.decode(version, ptr)
+    ptr += varint.decode.bytes
+    heads.push({key: key, seq: seq})
+  }
+
+  return heads
+}
+
+// [Head] -> Buffer
+function headsToVersion (heads) {
+  var bufAccum = []
+
+  for (var i = 0; i < heads.length; i++) {
+    bufAccum.push(heads[i].key)
+    bufAccum.push(toBuffer(varint.encode(heads[i].seq)))
+  }
+
+  return Buffer.concat(bufAccum)
 }

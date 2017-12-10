@@ -125,17 +125,12 @@ db.watch('/foo/bar', function () {
 db.put('/foo/bar/baz', 'hi') // triggers the above
 ```
 
-#### `db.snapshot(cb)`
-
-Return an object capturing the current state of `db` via the callback `cb` as
-`function (err, at)`. This object `at` can be passed into `db.createDiffStream`.
-
 #### `var stream = db.createDiffStream(key[, checkout][, head])`
 
-Find out about changes in key/value pairs between the snapshot `checkout` and
+Find out about changes in key/value pairs between the version `checkout` and
 `head` for all keys prefixed by `key`.
 
-`checkout` and `head` are snapshots to use to compare against. If not provided,
+`checkout` and `head` are versions to use to compare against. If not provided,
 `head is the current HEAD of the database, and `checkout` is the beginning of
 time.
 
@@ -150,6 +145,19 @@ time.
 that occured between `checkout` and `head`. When multiple feeds conflict for the
 value of a key at a point in time, `nodes` will have multiple entries. `<node>`
 is the full hyperdb node.
+
+#### `var stream = db.createHistoryStream([opts, ][start])
+
+Returns a readable stream of node objects covering all historic values since
+either the beginning of time, or the [version](#dbversioncallback) `opts.start.
+
+Valid opts include:
+
+- `opts.start`: Use this version at the starting point for historic traversal.
+- `opts.live`: whether this is a live history stream. If so, the stream will never terminate on its own and will continue emitting nodes in real-time as they are added to the database.
+
+Nodes are emitted in topographic order, meaning if value `v2` was aware of value
+`v1` at its insertion time, `v1` must be emitted before `v2`.
 
 #### `var stream = db.replicate([options])`
 

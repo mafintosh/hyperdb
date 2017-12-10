@@ -7,8 +7,8 @@ create.one = createOne
 create.two = createTwo
 create.three = createThree
 
-function createOne (id) {
-  return hyperdb(ram, {id: id, reduce: reduce, valueEncoding: 'json'})
+function createOne (key) {
+  return hyperdb(ram, key, {reduce: reduce, valueEncoding: 'json'})
 }
 
 function createTwo (cb) {
