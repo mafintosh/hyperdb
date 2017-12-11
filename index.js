@@ -35,6 +35,7 @@ DB.prototype.heads = function () {
     }
   }
 
+  // TODO: this could prob be done in O(heads) instead of O(heads^2)
   for (i = 0; i < heads.length; i++) {
     var h = heads[i]
     if (!h) continue
@@ -52,7 +53,9 @@ DB.prototype.heads = function () {
 
 DB.prototype.put = function (key, val, cb) {
   if (!cb) cb = noop
-  if (this._length > -1) return process.nextTick(cb, new Error('Cannot put on a snapshot'))
+  if (this._length > -1) {
+    return process.nextTick(cb, new Error('Cannot put on a snapshot'))
+  }
 
   key = normalizeKey(key)
   var path = hash(key, true)
@@ -79,7 +82,7 @@ DB.prototype.put = function (key, val, cb) {
 
   if (!heads.length) {
     writable.push(node)
-    return cb(null)
+    return process.nextTick(cb, null)
   }
 
   for (var i = 0; i < heads.length; i++) {
@@ -87,7 +90,7 @@ DB.prototype.put = function (key, val, cb) {
   }
 
   writable.push(node)
-  cb(null)
+  process.nextTick(cb, null)
 }
 
 DB.prototype._put = function (node, head) {
