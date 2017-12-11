@@ -64,8 +64,8 @@ DB.prototype.put = function (key, val, cb) {
 
   for (var i = 0; i < this._feeds.length; i++) {
     clock[i] = (this._feeds[i] || []).length
+    if (i === this._id) clock[i]++
   }
-
 
   if (!writable) writable = this._feeds[this._id] = []
 
@@ -185,8 +185,31 @@ DB.prototype.get = function (key, opts, cb) {
   var results = []
   var heads = this.heads()
 
+  // super dirty - clean up
+  var locks = []
+  var symbols = []
+
   for (var i = 0; i < heads.length; i++) {
-    this._get(key, opts, heads[i], results)
+    var s = Symbol('i-' + i)
+    var h = heads[i]
+    locks[h.feed] = s
+    symbols.push(s)
+  }
+  for (var i = 0; i < this._feeds.length; i++) {
+    if (locks[i]) continue
+    var prev = -1
+    for (var j = 0; j < heads.length; j++) {
+      var clock = heads[j].clock[i] || -1
+      if (clock > prev) {
+        prev = clock
+        locks[i] = symbols[j]
+      }
+    }
+  }
+  // end clean up
+
+  for (var i = 0; i < heads.length; i++) {
+    this._get(key, opts, 0, heads[i], results, symbols[i], locks)
   }
 
   if (this._map) results = results.map(this._map)
@@ -195,7 +218,7 @@ DB.prototype.get = function (key, opts, cb) {
   process.nextTick(cb, null, results)
 }
 
-DB.prototype._get = function (key, opts, head, results) {
+DB.prototype._get = function (key, opts, i, head, results, id, locks) {
   var prefixed = !!(opts && opts.prefix)
 
   // If no head -> 404
@@ -206,7 +229,7 @@ DB.prototype._get = function (key, opts, head, results) {
 
   // We want to find the key closest to our path.
   // At max, we need to go through path.length iterations
-  for (var i = 0; i < path.length; i++) {
+  for (; i < path.length; i++) {
     var val = path[i]
     if (head.path[i] === val) continue
 
@@ -219,12 +242,29 @@ DB.prototype._get = function (key, opts, head, results) {
     if (!remoteValues.length) return
 
     if (remoteValues.length > 1) {
-      console.log('get fork', remoteValues)
-      process.exit(1)
+      var all = remoteValues.map(x => getPtr(this, x))
+      var newIds = []
+      for (var j = 0; j < all.length; j++) {
+        var s = newIds[j] = Symbol(id.toString() + '-fork-' + j)
+        for (var h = 0; h < locks.length; h++) {
+          if (locks[h] !== id) continue
+          var best = true
+          for (var k = 0; k < all.length; k++) {
+            if (k === j || all[k].clock[h] <= all[j].clock[h]) continue
+            best = false
+          }
+          if (best) locks[h] = s
+        }
+      }
+      for (var j = 0; j < remoteValues.length; j++) {
+        this._get(key, opts, i + 1, getPtr(this, remoteValues[j]), results, newIds[j], locks)
+      }
+      return
     }
 
     // Recursive from a closer node
-    head = this._feeds[remoteValues[0].feed][remoteValues[0].seq]
+    head = getPtr(this, remoteValues[0])
+    if (locks[head.feed] !== id) return
   }
 
   pushResult(prefixed, results, key, head)
@@ -237,8 +277,13 @@ DB.prototype._get = function (key, opts, head, results) {
 
   for (var j = 0; j < lastValues.length; j++) {
     var val = this._feeds[lastValues[j].feed][lastValues[j].seq]
+    if (locks[val.feed] !== id) continue
     pushResult(prefixed, results, key, val)
   }
+}
+
+function getPtr (self, ptr) {
+  return self._feeds[ptr.feed][ptr.seq]
 }
 
 function pushResult (prefixed, results, key, head) {
