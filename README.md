@@ -6,6 +6,8 @@ Distributed scalable database.
 npm install hyperdb
 ```
 
+Read [ARCHITECTURE.md](ARCHITECTURE.md) for details on how hyperdb works.
+
 ## Usage
 
 ``` js
