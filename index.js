@@ -1,6 +1,3 @@
-var hypercore = require('hypercore')
-var ram = require('random-access-memory')
-var sodium = require('sodium-universal')
 var hash = require('./lib/hash')
 var iterator = require('./lib/iterator')
 
@@ -85,8 +82,8 @@ DB.prototype.put = function (key, val, cb) {
     return process.nextTick(cb, null)
   }
 
-  for (var i = 0; i < heads.length; i++) {
-    this._put(node, heads[i])
+  for (var j = 0; j < heads.length; j++) {
+    this._put(node, heads[j])
   }
 
   writable.push(node)
@@ -158,8 +155,8 @@ DB.prototype._put = function (node, head) {
       if (!remoteValues || !remoteValues.length) break
 
       if (remoteValues.length > 1) { // more than one - fork out
-        for (var k = 0; k < remoteValues.length; k++) {
-          this._put(node, this._feeds[remoteValues[k].feed][remoteValues[k].seq])
+        for (var l = 0; l < remoteValues.length; l++) {
+          this._put(node, this._feeds[remoteValues[l].feed][remoteValues[l].seq])
         }
         return
       }
@@ -185,31 +182,10 @@ DB.prototype.get = function (key, opts, cb) {
   var results = []
   var heads = this.heads()
 
-  // super dirty - clean up
-  var locks = []
-  var symbols = []
+  var locks = getLocks(heads, this._feeds.length)
 
   for (var i = 0; i < heads.length; i++) {
-    var s = Symbol('i-' + i)
-    var h = heads[i]
-    locks[h.feed] = s
-    symbols.push(s)
-  }
-  for (var i = 0; i < this._feeds.length; i++) {
-    if (locks[i]) continue
-    var prev = -1
-    for (var j = 0; j < heads.length; j++) {
-      var clock = heads[j].clock[i] || -1
-      if (clock > prev) {
-        prev = clock
-        locks[i] = symbols[j]
-      }
-    }
-  }
-  // end clean up
-
-  for (var i = 0; i < heads.length; i++) {
-    this._get(key, opts, 0, heads[i], results, symbols[i], locks)
+    this._get(key, opts, 0, heads[i], results, heads[i], locks)
   }
 
   if (this._map) results = results.map(this._map)
@@ -218,11 +194,25 @@ DB.prototype.get = function (key, opts, cb) {
   process.nextTick(cb, null, results)
 }
 
-DB.prototype._get = function (key, opts, i, head, results, id, locks) {
+DB.prototype._getForks = function (key, opts, i, ptrs, results, lock, locks) {
+  var nodes = getAllPtrs(this, ptrs)
+
+  for (var feedId = 0; feedId < locks.length; feedId++) {
+    var otherLock = locks[feedId]
+    if (otherLock !== lock) continue
+    locks[feedId] = getHighestClock(nodes, feedId)
+  }
+
+  for (var j = 0; j < nodes.length; j++) {
+    this._get(key, opts, i + 1, nodes[j], results, nodes[j], locks)
+  }
+}
+
+DB.prototype._get = function (key, opts, i, head, results, lock, locks) {
   var prefixed = !!(opts && opts.prefix)
 
   // If no head -> 404
-  if (!head) return cb(null, null)
+  if (!head) return
 
   // Do not terminate the hash if it is a prefix search
   var path = hash(key, !prefixed)
@@ -241,30 +231,15 @@ DB.prototype._get = function (key, opts, i, head, results, id, locks) {
     // No closer ones -> 404
     if (!remoteValues.length) return
 
+    // More than one reference -> We have forks.
     if (remoteValues.length > 1) {
-      var all = remoteValues.map(x => getPtr(this, x))
-      var newIds = []
-      for (var j = 0; j < all.length; j++) {
-        var s = newIds[j] = Symbol(id.toString() + '-fork-' + j)
-        for (var h = 0; h < locks.length; h++) {
-          if (locks[h] !== id) continue
-          var best = true
-          for (var k = 0; k < all.length; k++) {
-            if (k === j || all[k].clock[h] <= all[j].clock[h]) continue
-            best = false
-          }
-          if (best) locks[h] = s
-        }
-      }
-      for (var j = 0; j < remoteValues.length; j++) {
-        this._get(key, opts, i + 1, getPtr(this, remoteValues[j]), results, newIds[j], locks)
-      }
+      this._getForks(key, opts, i, remoteValues, results, lock, locks)
       return
     }
 
     // Recursive from a closer node
     head = getPtr(this, remoteValues[0])
-    if (locks[head.feed] !== id) return
+    if (locks[head.feed] !== lock) return
   }
 
   pushResult(prefixed, results, key, head)
@@ -276,23 +251,10 @@ DB.prototype._get = function (key, opts, i, head, results, id, locks) {
   if (!lastValues) return
 
   for (var j = 0; j < lastValues.length; j++) {
-    var val = this._feeds[lastValues[j].feed][lastValues[j].seq]
-    if (locks[val.feed] !== id) continue
-    pushResult(prefixed, results, key, val)
+    var lastVal = getPtr(this, lastValues[j])
+    if (locks[val.feed] !== lock) continue
+    pushResult(prefixed, results, key, lastVal)
   }
-}
-
-function getPtr (self, ptr) {
-  return self._feeds[ptr.feed][ptr.seq]
-}
-
-function pushResult (prefixed, results, key, head) {
-  if (prefixed && isPrefix(head.key, key)) return push(results, head)
-  if (head.key === key) return push(results, head)
-}
-
-function push (results, node) {
-  results.push(node)
 }
 
 DB.prototype.list = function (prefix, opts, cb) {
@@ -338,7 +300,50 @@ function normalizeKey (key) {
 
 function noop () {}
 
-function Thread () {
-
+function getAllPtrs (self, ptrs) {
+  return ptrs.map(x => getPtr(self, x))
 }
 
+function getPtr (self, ptr) {
+  return self._feeds[ptr.feed][ptr.seq]
+}
+
+function pushResult (prefixed, results, key, head) {
+  if (prefixed && isPrefix(head.key, key)) return push(results, head)
+  if (head.key === key) return push(results, head)
+}
+
+function push (results, node) {
+  results.push(node)
+}
+
+function getLocks (nodes, feedCount) {
+  var locks = new Array(feedCount)
+  for (var feedId = 0; feedId < feedCount; feedId++) {
+    locks[feedId] = getHighestClock(nodes, feedId)
+  }
+  return locks
+}
+
+function getHighestClock (nodes, feedId) {
+  var highest = null
+
+  for (var i = 0; i < nodes.length; i++) {
+    var node = nodes[i]
+
+    if (!highest) {
+      highest = node
+      continue
+    }
+
+    var hclock = highest.clock
+    var nclock = node.clock
+
+    if (nclock.length <= feedId) continue
+    if (hclock.length <= feedId || nclock[feedId] > hclock[feedId]) {
+      highest = node
+    }
+  }
+
+  return highest
+}
