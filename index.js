@@ -83,14 +83,14 @@ DB.prototype.put = function (key, val, cb) {
   }
 
   for (var j = 0; j < heads.length; j++) {
-    this._put(node, heads[j])
+    this._put(node, 0, heads[j])
   }
 
   writable.push(node)
   process.nextTick(cb, null)
 }
 
-DB.prototype._put = function (node, head) {
+DB.prototype._put = function (node, i, head) {
   // TODO: when there is a fork, this will visit the same nodes more than once
   // which isn't a big deal, but unneeded - can be optimised away in the future
 
@@ -104,7 +104,7 @@ DB.prototype._put = function (node, head) {
   var remoteBucket
   var remoteValues
 
-  for (var i = 0; i < node.path.length; i++) {
+  for (; i < node.path.length; i++) {
     var val = node.path[i] // the two bit value
     var headVal = head.path[i] // the two value of the current head
 
@@ -156,7 +156,7 @@ DB.prototype._put = function (node, head) {
 
       if (remoteValues.length > 1) { // more than one - fork out
         for (var l = 0; l < remoteValues.length; l++) {
-          this._put(node, this._feeds[remoteValues[l].feed][remoteValues[l].seq])
+          this._put(node, i + 1, this._feeds[remoteValues[l].feed][remoteValues[l].seq])
         }
         return
       }
