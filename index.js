@@ -148,6 +148,7 @@ DB.prototype._put = function (node, i, head) {
       if (!localBucket) localBucket = node.trie[i] = []
       if (!localBucket[headVal]) localBucket[headVal] = []
       localValues = localBucket[headVal]
+
       pushNoDups(localValues, {feed: head.feed, seq: head.seq})
 
       // check if head has a closer pointer
@@ -274,7 +275,7 @@ DB.prototype.list = function (prefix, opts, cb) {
 }
 
 DB.prototype.iterator = function (prefix, opts) {
-  return iterator(this, normalizeKey(prefix), opts)
+  return iterator(this, normalizeKey(prefix || '/'), opts)
 }
 
 DB.prototype.createReadStream = function (prefix, opts) {
