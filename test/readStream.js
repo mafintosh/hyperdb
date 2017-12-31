@@ -6,9 +6,9 @@ tape('basic readStream', { timeout: 1000 }, function (t) {
   // t.plan(2)
   var db = create.one()
   var writer = db.createWriteStream()
-  var vals = ['foo', 'foo/a', 'foo/b', 'aa', 'bb', 'c', 'bar/baz', 'foo/abc', 'foo/b', 'bar/cat', 'foo/bar', 'bar/cat', 'aa', 'bb', 'c']
-  vals = vals.concat(vals)
-  vals = vals.concat(vals)
+  var vals = ['foo', 'foo/a', 'foo/b', 'aa', 'bb', 'c', 'bar/baz', 'foo/abc', 'foo/b', 'bar/cat', 'foo/bar', 'bar/cat']
+  // vals = vals.concat(vals)
+  // vals = vals.concat(vals)
   // vals = vals.concat(vals)
   // vals = vals.concat(vals)
   // vals = vals.concat(vals)
@@ -38,7 +38,7 @@ tape('basic readStream', { timeout: 1000 }, function (t) {
   })
 })
 
-tape.only('readStream with two feeds', { timeout: 1000 }, function (t) {
+tape('readStream with two feeds', { timeout: 1000 }, function (t) {
   create.two((a, b) => {
     var aValues = ['a/b', 'a/b/c', 'b/c', 'b/c/d']
     var aWriter = a.createWriteStream()
