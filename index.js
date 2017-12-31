@@ -774,6 +774,148 @@ DB.prototype._visitGet = function (key, path, i, node, heads, result, onvisit, c
   }
 }
 
+DB.prototype.createReadStream = function (key) {
+  var self = this
+  var path = hash(key, true)
+  var streamHeads
+  var streamQueue
+  var visited = {}
+  var stream = new Readable({ objectMode: true })
+  stream._read = read
+
+  return stream
+
+  function read () {
+    // console.log('***read called')
+    // if no heads - get heads and process first tries
+    if (!streamHeads) {
+      self.heads(function (err, heads) {
+        if (err) stream.emit('error', err)
+        if (!heads.length) {
+          stream.push(null)
+          return
+        }
+        streamHeads = heads
+        streamQueue = heads
+        next()
+      })
+      return
+    }
+    next()
+  }
+
+  function next () {
+    if (!streamQueue.length) {
+      // console.log('nothing left in queue')
+      stream.push(null)
+      return
+    }
+    // console.log('next:', streamQueue.map(v => v.key))
+    // console.log(streamHeads.map(v => v.clock))
+    // sort stream queue first to ensure that you always get the latest first
+    streamQueue.sort(sortNodesByClock)
+    var node = streamQueue.shift()
+    readNext(node, 0, (err, match) => {
+      // console.log('----', node.key, 'called')
+      if (err) {
+        return stream.emit('error', err)
+      }
+      if (match) {
+        stream.push(node)
+      } else {
+        next()
+      }
+    })
+  }
+
+  function readNext (node, i, cb) {
+    var writers = self._writers
+    var trie
+    var vals
+    var missing = 0
+    var error
+    var id = node.feed + ',' + node.seq
+
+    visited[id] = true
+
+    for (; i < path.length - 1; i++) {
+      if (node.path[i] === path[i]) continue
+      // console.log(node.key, key, 'not matching', i)
+      // check trie
+      trie = node.trie[i]
+      if (!trie) {
+        // what do we do in this case
+        return cb(null)
+      }
+
+      vals = trie[path[i]]
+
+      // not found
+      if (!vals || !vals.length) {
+        // what do we do in this case
+        return cb(null)
+      }
+
+      missing = vals.length
+      error = null
+
+      for (var j = 0; j < vals.length; j++) {
+        // fetch potential
+        writers[vals[j].feed].get(vals[j].seq, (err, val) => {
+          if (err) {
+            error = err
+          } else { // i think this could be optimised by saving the paths index with the node
+            console.log('-----', node.key, 'pushing ---', val.key)
+            streamQueue.push(val)
+          }
+          missing--
+          if (!missing) {
+            // console.log('-----', node.key, 'unmatching callback')
+            cb(error)
+          }
+        })
+      }
+      return
+    }
+    // console.log('prefix match')
+    // Traverse the rest of the node's trie, recursively, hunting for more nodes with
+    // the desired prefix.
+    for (var k = path.length - 1; k < node.trie.length; k++) {
+      trie = node.trie[k] || []
+      for (i = 0; i < trie.length; i++) {
+        var entrySet = trie[i] || []
+        for (var el = 0; el < entrySet.length; el++) {
+          var entry = entrySet[el]
+
+          id = entry.feed + ',' + entry.seq
+          if (visited[id]) continue
+          visited[id] = true
+          missing++
+          // console.log('+ (', missing, ')', node.key)
+          writers[entry.feed].get(entry.seq, function (err, val) {
+            if (err) {
+              error = err
+            } else {
+              // console.log('-----', node.key, 'pushing ---', val.key)
+              streamQueue.push(val)
+            }
+            missing--
+            if (!missing) {
+              // console.log('-----', node.key, 'callback')
+              cb(error, true)
+            }
+          })
+        }
+      }
+    }
+    // console.log('(', missing, ')', node.key)
+    if (!missing) {
+      // console.log(node.key, 'nothing called')
+      cb(null, true)
+    }
+  }
+}
+
 DB.prototype.createDiffStream = function (key, checkout, head) {
   if (!checkout) checkout = []  // Diff from the beginning
 
@@ -1164,6 +1306,22 @@ function isOptions (opts) {
 function sortNodes (a, b) {
   if (a.feed === b.feed) return a.seq - b.seq
   return a.feed - b.feed
+}
+
+function sortNodesByClock (a, b) {
+  var isGreater = false
+  var isLess = false
+  var length = a.clock.length
+  if (b.clock.length > length) length = b.clock.length
+  for (var i = 0; i < length; i++) {
+    var diff = (a.clock[i] || 0) - (b.clock[i] || 0)
+    if (diff > 0) isGreater = true
+    if (diff < 0) isLess = true
+  }
+  if (isGreater && isLess) return 0
+  if (isLess) return 1
+  if (isGreater) return -1
+  return 0 // neither is set, so equal
 }
 
 // Buffer -> [Head]
