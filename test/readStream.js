@@ -22,6 +22,10 @@ tape('basic readStream', { timeout: 1000 }, function (t) {
 
   writer.end((err) => {
     t.error(err, 'no error')
+    db.get('bar/cat', (err, node) => {
+      t.error(err, 'no error')
+      console.log('node:::', node)
+    })
     var reader = db.createReadStream('bar/')
     reader.on('data', (data) => {
       console.log('data,', data.key, '----', data.value)
@@ -80,3 +84,45 @@ tape('readStream with two feeds', { timeout: 1000 }, function (t) {
     }
   })
 })
+
+tape.only('readStream with two feeds', { timeout: 1000 }, function (t) {
+  create.two((a, b) => {
+    populate(a, ['a/a', 'a/b', 'a/c'], 0, (err) => {
+      t.error(err)
+      replicate(a, b, () => {
+        populate(b, ['b/a', 'b/b', 'b/c', 'a/a', 'a/b', 'a/c'], 3, (err) => {
+          t.error(err)
+          replicate(a, b, validate)
+        })
+      })
+    })
+    function validate () {
+      const reader = b.createReadStream('/')
+      reader.on('data', (data) => {
+        console.log('data ->', data.key, data.value)
+      })
+      reader.on('end', () => {
+        // t.ok(expectedValues.length === 0)
+        t.pass('stream ended ok')
+        t.end()
+      })
+      reader.on('error', (err) => {
+        // console.log('Something went wrong', err)
+        t.fail(err.message)
+        t.end()
+      })
+    }
+  })
+})
+
+function populate (db, vals, offset, cb) {
+  var writer = db.createWriteStream()
+  writer.write(vals.map((v, i) => ({
+    type: 'put',
+    key: v,
+    value: (offset || 0) + i
+  })))
+  writer.end((err) => {
+    cb(err)
+  })
+}

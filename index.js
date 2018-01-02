@@ -438,10 +438,8 @@ DB.prototype._get = function (key, wait, result, visit, cb) {
         if (wait) return self._wait(key, updates, result, visit, cb)
         return cb(null, null)
       }
-
       if (self._map) result = result.map(self._map)
       if (self._reduce) result = result.reduce(self._reduce)
-
       cb(null, result)
     }
   })
@@ -810,10 +808,11 @@ DB.prototype.createReadStream = function (key) {
       stream.push(null)
       return
     }
-    // console.log('next:', streamQueue.map(v => v.key))
-    // console.log(streamHeads.map(v => v.clock))
     // sort stream queue first to ensure that you always get the latest first
     streamQueue.sort(sortNodesByClock)
+    streamQueue.forEach((v, i) => {
+      if (i === 0) console.log(`${i} - ${v.key}: \t clock: ${v.clock}, ${v.seq}, index:${v.value}`)
+    })
     var node = streamQueue.shift()
     readNext(node, 0, (err, match) => {
       // console.log('----', node.key, 'called')
@@ -858,15 +857,15 @@ DB.prototype.createReadStream = function (key) {
 
       missing = vals.length
       error = null
-
       for (var j = 0; j < vals.length; j++) {
         // fetch potential
         writers[vals[j].feed].get(vals[j].seq, (err, val) => {
           if (err) {
             error = err
           } else { // i think this could be optimised by saving the paths index with the node
-            console.log('-----', node.key, 'pushing ---', val.key)
-            streamQueue.push(val)
+            // console.log('-----', node.key, 'pushing ---', val.key)
+            // check for collision
+            if (val && val.key.indexOf(key) !== -1) streamQueue.push(val)
           }
           missing--
           if (!missing) {
@@ -880,7 +879,7 @@ DB.prototype.createReadStream = function (key) {
     // console.log('prefix match')
     // Traverse the rest of the node's trie, recursively, hunting for more nodes with
     // the desired prefix.
-    for (var k = path.length - 1; k < node.trie.length; k++) {
+    for (var k = path.length - 2; k < node.trie.length; k++) {
       trie = node.trie[k] || []
       for (i = 0; i < trie.length; i++) {
         var entrySet = trie[i] || []
@@ -897,7 +896,8 @@ DB.prototype.createReadStream = function (key) {
               error = err
             } else {
               // console.log('-----', node.key, 'pushing ---', val.key)
-              streamQueue.push(val)
+              // check for collision
+              if (val && val.key.indexOf(key) !== -1) streamQueue.push(val)
             }
             missing--
             if (!missing) {
@@ -1318,10 +1318,10 @@ function sortNodesByClock (a, b) {
     if (diff > 0) isGreater = true
     if (diff < 0) isLess = true
   }
-  if (isGreater && isLess) return 0
+  if (isGreater && isLess) return b.seq - a.seq // same time, so use sequence to order
   if (isLess) return 1
   if (isGreater) return -1
-  return 0 // neither is set, so equal
+  return b.seq - a.seq // neither is set, so equal
 }
 
 // Buffer -> [Head]
