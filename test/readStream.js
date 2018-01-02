@@ -85,7 +85,7 @@ tape('readStream with two feeds', { timeout: 1000 }, function (t) {
   })
 })
 
-tape.only('readStream with two feeds', { timeout: 1000 }, function (t) {
+tape('readStream with two feeds', { timeout: 1000 }, function (t) {
   create.two((a, b) => {
     populate(a, ['a/a', 'a/b', 'a/c'], 0, (err) => {
       t.error(err)
