@@ -810,16 +810,16 @@ DB.prototype.createReadStream = function (key) {
     }
     // sort stream queue first to ensure that you always get the latest first
     streamQueue.sort(sortNodesByClock)
-    streamQueue.forEach((v, i) => {
-      if (i === 0) console.log(`${i} - ${v.key}: \t clock: ${v.clock}, ${v.seq}, index:${v.value}`)
-    })
+    // console.log('------')
+    // streamQueue.forEach((v, i) => {
+    //   if (i === 0) console.log(`${i} - ${v.key}: \t clock: ${v.clock}, ${v.seq}, index:${v.value}`)
+    // })
     var node = streamQueue.shift()
-    readNext(node, 0, (err, match) => {
-      // console.log('----', node.key, 'called')
+    readNext(node, 0, (err) => {
       if (err) {
         return stream.emit('error', err)
       }
-      if (match) {
+      if (node && node.key.indexOf(key) === 0) {
         stream.push(node)
       } else {
         next()
@@ -830,56 +830,55 @@ DB.prototype.createReadStream = function (key) {
   function readNext (node, i, cb) {
     var writers = self._writers
     var trie
-    var vals
     var missing = 0
     var error
     var id = node.feed + ',' + node.seq
 
     visited[id] = true
 
-    for (; i < path.length - 1; i++) {
-      if (node.path[i] === path[i]) continue
-      // console.log(node.key, key, 'not matching', i)
-      // check trie
-      trie = node.trie[i]
-      if (!trie) {
-        // what do we do in this case
-        return cb(null)
-      }
+    // for (; i < path.length - 1; i++) {
+    //   if (node.path[i] === path[i]) continue
+    //   // console.log(node.key, key, 'not matching', i)
+    //   // check trie
+    //   trie = node.trie[i]
+    //   if (!trie) {
+    //     // what do we do in this case
+    //     return cb(null)
+    //   }
 
-      vals = trie[path[i]]
+    //   vals = trie[path[i]]
 
-      // not found
-      if (!vals || !vals.length) {
-        // what do we do in this case
-        return cb(null)
-      }
+    //   // not found
+    //   if (!vals || !vals.length) {
+    //     // what do we do in this case
+    //     return cb(null)
+    //   }
 
-      missing = vals.length
-      error = null
-      for (var j = 0; j < vals.length; j++) {
-        // fetch potential
-        writers[vals[j].feed].get(vals[j].seq, (err, val) => {
-          if (err) {
-            error = err
-          } else { // i think this could be optimised by saving the paths index with the node
-            // console.log('-----', node.key, 'pushing ---', val.key)
-            // check for collision
-            if (val && val.key.indexOf(key) !== -1) streamQueue.push(val)
-          }
-          missing--
-          if (!missing) {
-            // console.log('-----', node.key, 'unmatching callback')
-            cb(error)
-          }
-        })
-      }
-      return
-    }
+    //   missing = vals.length
+    //   error = null
+    //   for (var j = 0; j < vals.length; j++) {
+    //     // fetch potential
+    //     writers[vals[j].feed].get(vals[j].seq, (err, val) => {
+    //       if (err) {
+    //         error = err
+    //       } else { // i think this could be optimised by saving the paths index with the node
+    //         console.log('-----', node.key, 'pushing ---', val.key)
+    //         streamQueue.push(val)
+    //       }
+    //       missing--
+    //       if (!missing) {
+    //         // console.log('-----', node.key, 'unmatching callback')
+    //         cb(error)
+    //       }
+    //     })
+    //   }
+    //   return
+    // }
+
     // console.log('prefix match')
     // Traverse the rest of the node's trie, recursively, hunting for more nodes with
     // the desired prefix.
-    for (var k = path.length - 2; k < node.trie.length; k++) {
+    for (var k = 0; k < node.trie.length; k++) {
       trie = node.trie[k] || []
       for (i = 0; i < trie.length; i++) {
         var entrySet = trie[i] || []
@@ -897,7 +896,7 @@ DB.prototype.createReadStream = function (key) {
             } else {
               // console.log('-----', node.key, 'pushing ---', val.key)
               // check for collision
-              if (val && val.key.indexOf(key) !== -1) streamQueue.push(val)
+              streamQueue.push(val)
             }
             missing--
             if (!missing) {
