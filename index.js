@@ -9,16 +9,16 @@ function DB (opts) {
 
   this._id = opts.id || 0
   this._feeds = []
-  this._length = -1
   this._feeds[this._id] = []
   this._map = opts.map || null
   this._reduce = opts.reduce || null
+  this._snapshot = false
 }
 
 DB.prototype.snapshot = function () {
-  var snapshot = new DB()
-  snapshot._feeds = this._feeds
-  snapshot._length = this._feeds.length
+  var snapshot = new DB({id: this._id})
+  snapshot._feeds = this._feeds.map(f => f.slice(0))
+  snapshot._snapshot = true
   return snapshot
 }
 
@@ -50,7 +50,7 @@ DB.prototype.heads = function () {
 
 DB.prototype.put = function (key, val, cb) {
   if (!cb) cb = noop
-  if (this._length > -1) {
+  if (this._snapshot) {
     return process.nextTick(cb, new Error('Cannot put on a snapshot'))
   }
 
