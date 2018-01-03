@@ -1,5 +1,7 @@
+var from = require('from2')
 var hash = require('./lib/hash')
 var iterator = require('./lib/iterator')
+var differ = require('./lib/differ')
 
 module.exports = DB
 
@@ -274,13 +276,28 @@ DB.prototype.list = function (prefix, opts, cb) {
   }
 }
 
+DB.prototype.diff = function (other, prefix, opts) {
+  var left = this.iterator(prefix, opts)
+  var right = other.iterator(prefix, opts)
+  return differ(left, right)
+}
+
 DB.prototype.iterator = function (prefix, opts) {
   return iterator(this, normalizeKey(prefix || '/'), opts)
 }
 
+DB.prototype.createDiffStream = function (other, prefix, opts) {
+  var diff = this.diff(other, prefix, opts)
+
+  return from.obj(read)
+
+  function read (size, cb) {
+    diff.next(cb)
+  }
+}
+
 DB.prototype.createReadStream = function (prefix, opts) {
   var ite = this.iterator(prefix, opts)
-  var from = require('from2')
 
   return from.obj(read)
 
