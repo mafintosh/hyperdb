@@ -44,7 +44,6 @@ tape('basic readStream', { timeout: 1000 }, function (t) {
       t.end()
     })
     reader.on('error', (err) => {
-      console.log('Something went wrong', err)
       t.fail(err.message)
       t.end()
     })
@@ -64,6 +63,7 @@ tape('readStream with two feeds', { timeout: 1000 }, function (t) {
     function validate (err) {
       t.error(err, 'no error')
       var reader = b.createReadStream('b/')
+      var expectedValues = [7, 6]
       reader.on('data', (data) => {
         // console.log('data---', data.key, data.value)
         t.equals(data.value, expectedValues.shift())
@@ -83,17 +83,27 @@ tape('readStream with two feeds', { timeout: 1000 }, function (t) {
 
 tape('readStream with two feeds (again)', { timeout: 1000 }, function (t) {
   create.two((a, b) => {
+    populate(a, ['/a/a', '/a/b', '/a/c'], 0, (err) => {
       t.error(err)
       replicate(a, b, () => {
+        populate(b, ['/b/a', '/b/b', '/b/c', '/a/a', '/a/b', '/a/c'], 3, (err) => {
           t.error(err)
           replicate(a, b, validate)
         })
       })
     })
     function validate () {
+      const reader = a.createReadStream('')
+      let previousValue = 10000
+      let total = 0
       reader.on('data', (data) => {
+        // console.log('data ->', data.key, typeof data.value, data.value)
+        t.ok(previousValue > data.value)
+        previousValue = data.value
+        total++
       })
       reader.on('end', () => {
+        t.equals(total, 6)
         t.pass('stream ended ok')
         t.end()
       })
