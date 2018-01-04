@@ -21,27 +21,25 @@ function populate (db, vals, offset, cb) {
 
 tape('basic readStream', { timeout: 1000 }, function (t) {
   var db = create.one()
-  var vals = ['foo', 'foo/a', 'foo/b', 'aa', 'bb', 'c', 'bar/baz', 'foo/abc', 'foo/b', 'bar/cat', 'foo/bar', 'bar/cat']
-  // var vals = ['foo/bar', 'c', 'bar/dog', 'bar/cat', 'bar/foo', 'bar/cat']
-  // var vals = ['foo/b', 'bar/cat', 'foo/bar', 'bar/cat']
-  // vals = vals.concat(vals)
-  // vals = vals.concat(vals)
-  // vals = vals.concat(vals)
-  // vals = vals.concat(vals)
-  // vals = vals.concat(vals)
-  // vals = vals.concat(vals)
+  var vals = ['foo', 'foo/a', 'foo/b', 'aa', 'bb', 'c', 'bar/baz', 'foo/abc', 'foo/b', 'bar/cat', 'foo/bar', 'bar/cat', 'something']
+  vals = vals.concat(vals)
+  vals = vals.concat(vals)
+  vals = vals.concat(vals)
+  vals = vals.concat(vals)
+  vals = vals.concat(vals)
+  vals = vals.concat(vals)
   populate(db, vals, 0, validate)
 
   function validate (err) {
     t.error(err, 'no error')
-    var reader = db.createReadStream('bar/')
-    var catCount = 0
+    var reader = db.createReadStream('foo/')
+    var fooCount = 0
     reader.on('data', (data) => {
-      if (data.key === 'bar/cat') catCount++
+      if (data.key === 'foo/b') fooCount++
       // console.log('data,', data.key, '----', data.value)
     })
     reader.on('end', () => {
-      t.equals(catCount, Math.pow(2, 1))
+      t.equals(fooCount, 1)
       t.pass('stream ended ok')
       t.end()
     })
@@ -66,7 +64,6 @@ tape('readStream with two feeds', { timeout: 1000 }, function (t) {
     function validate (err) {
       t.error(err, 'no error')
       var reader = b.createReadStream('b/')
-      var expectedValues = [7, 6, 3, 2]
       reader.on('data', (data) => {
         // console.log('data---', data.key, data.value)
         t.equals(data.value, expectedValues.shift())
@@ -77,7 +74,6 @@ tape('readStream with two feeds', { timeout: 1000 }, function (t) {
         t.end()
       })
       reader.on('error', (err) => {
-        console.log('Something went wrong', err)
         t.fail(err.message)
         t.end()
       })
@@ -87,27 +83,21 @@ tape('readStream with two feeds', { timeout: 1000 }, function (t) {
 
 tape('readStream with two feeds (again)', { timeout: 1000 }, function (t) {
   create.two((a, b) => {
-    populate(a, ['a/a', 'a/b', 'a/c'], 0, (err) => {
       t.error(err)
       replicate(a, b, () => {
-        populate(b, ['b/a', 'b/b', 'b/c', 'a/a', 'a/b', 'a/c'], 3, (err) => {
           t.error(err)
           replicate(a, b, validate)
         })
       })
     })
     function validate () {
-      const reader = b.createReadStream('/')
       reader.on('data', (data) => {
-        console.log('data ->', data.key, data.value)
       })
       reader.on('end', () => {
-        // t.ok(expectedValues.length === 0)
         t.pass('stream ended ok')
         t.end()
       })
       reader.on('error', (err) => {
-        // console.log('Something went wrong', err)
         t.fail(err.message)
         t.end()
       })

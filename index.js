@@ -12,6 +12,7 @@ var toBuffer = require('to-buffer')
 var varint = require('varint')
 var Readable = require('stream').Readable
 var bulk = require('bulk-write-stream')
+var LRU = require('lru')
 var once = require('once')
 var protocol = null // lazy load on replicate
 
@@ -772,28 +773,28 @@ DB.prototype._visitGet = function (key, path, i, node, heads, result, onvisit, c
   }
 }
 
-DB.prototype.createReadStream = function (key) {
+DB.prototype.createReadStream = function (key, opts) {
+  if (!opts) opts = {}
   var self = this
   var path = hash(key, true)
-  var streamHeads
-  var streamQueue
+  var cacheMax = opts.cacheSize || 128
+  var keyCache = new LRU(cacheMax)
   var visited = {}
+  var streamQueue
   var stream = new Readable({ objectMode: true })
   stream._read = read
 
   return stream
 
   function read () {
-    // console.log('***read called')
     // if no heads - get heads and process first tries
-    if (!streamHeads) {
+    if (!streamQueue) {
       self.heads(function (err, heads) {
         if (err) stream.emit('error', err)
         if (!heads.length) {
           stream.push(null)
           return
         }
-        streamHeads = heads
         streamQueue = heads
         next()
       })
@@ -804,27 +805,45 @@ DB.prototype.createReadStream = function (key) {
 
   function next () {
     if (!streamQueue.length) {
-      // console.log('nothing left in queue')
       stream.push(null)
       return
     }
     // sort stream queue first to ensure that you always get the latest first
     streamQueue.sort(sortNodesByClock)
-    // console.log('------')
-    // streamQueue.forEach((v, i) => {
-    //   if (i === 0) console.log(`${i} - ${v.key}: \t clock: ${v.clock}, ${v.seq}, index:${v.value}`)
-    // })
     var node = streamQueue.shift()
-    readNext(node, 0, (err) => {
+    readNext(node, 0, (err, match) => {
       if (err) {
         return stream.emit('error', err)
       }
-      if (node && node.key.indexOf(key) === 0) {
-        stream.push(node)
-      } else {
-        next()
-      }
+      if (!match) return next()
+      // check if really a match and not encountered before
+      check(node, (matchingNode) => {
+        if (!matchingNode) next()
+        else {
+          keyCache.set(matchingNode.key, true)
+          stream.push(matchingNode)
+        }
+      })
     })
+  }
+  function check (node, cb) {
+    // is it actually a match and not a collision
+    if (!(node && node.key && node.key.indexOf(key) === 0)) return cb()
+    // have we encountered this node before
+    if (keyCache.get(node.key)) return cb()
+    // it is not in the cache but might still be a duplicate if cache is full
+    if (keyCache.length === cacheMax) {
+      // so check if this is the first instance of the node
+      return self.get(node.key, (err, latest) => {
+        if (err) return stream.emit('error', err)
+        if (sortNodesByClock(latest, node) >= 0) {
+          cb(latest)
+        } else {
+          cb()
+        }
+      })
+    }
+    cb(node)
   }
 
   function readNext (node, i, cb) {
@@ -832,84 +851,72 @@ DB.prototype.createReadStream = function (key) {
     var trie
     var missing = 0
     var error
+    var vals
     var id = node.feed + ',' + node.seq
-
     visited[id] = true
+    for (; i < path.length - 1; i++) {
+      if (node.path[i] === path[i]) continue
+      // check trie
+      trie = node.trie[i]
+      if (!trie) {
+        return cb(null)
+      }
+      vals = trie[path[i]]
+      // not found
+      if (!vals || !vals.length) {
+        return cb(null)
+      }
 
-    // for (; i < path.length - 1; i++) {
-    //   if (node.path[i] === path[i]) continue
-    //   // console.log(node.key, key, 'not matching', i)
-    //   // check trie
-    //   trie = node.trie[i]
-    //   if (!trie) {
-    //     // what do we do in this case
-    //     return cb(null)
-    //   }
+      missing = vals.length
+      error = null
+      for (var j = 0; j < vals.length; j++) {
+        // fetch potential
+        writers[vals[j].feed].get(vals[j].seq, (err, val) => {
+          if (err) {
+            error = err
+          } else {
+            // i think this could be optimised by saving the paths index with the node
+            streamQueue.push(val)
+          }
+          missing--
+          if (!missing) {
+            cb(error)
+          }
+        })
+      }
+      return
+    }
 
-    //   vals = trie[path[i]]
-
-    //   // not found
-    //   if (!vals || !vals.length) {
-    //     // what do we do in this case
-    //     return cb(null)
-    //   }
-
-    //   missing = vals.length
-    //   error = null
-    //   for (var j = 0; j < vals.length; j++) {
-    //     // fetch potential
-    //     writers[vals[j].feed].get(vals[j].seq, (err, val) => {
-    //       if (err) {
-    //         error = err
-    //       } else { // i think this could be optimised by saving the paths index with the node
-    //         console.log('-----', node.key, 'pushing ---', val.key)
-    //         streamQueue.push(val)
-    //       }
-    //       missing--
-    //       if (!missing) {
-    //         // console.log('-----', node.key, 'unmatching callback')
-    //         cb(error)
-    //       }
-    //     })
-    //   }
-    //   return
-    // }
-
-    // console.log('prefix match')
-    // Traverse the rest of the node's trie, recursively, hunting for more nodes with
-    // the desired prefix.
-    for (var k = 0; k < node.trie.length; k++) {
+    // Traverse the rest of the node's trie, recursively,
+    // hunting for more nodes with the desired prefix.
+    for (var k = path.length - 2; k < node.trie.length; k++) {
       trie = node.trie[k] || []
       for (i = 0; i < trie.length; i++) {
         var entrySet = trie[i] || []
         for (var el = 0; el < entrySet.length; el++) {
           var entry = entrySet[el]
 
+          // TODO: figure out a better way to ensure we don't revisit nodes
+          // this cache will not scale well
           id = entry.feed + ',' + entry.seq
           if (visited[id]) continue
           visited[id] = true
           missing++
-          // console.log('+ (', missing, ')', node.key)
           writers[entry.feed].get(entry.seq, function (err, val) {
             if (err) {
               error = err
             } else {
-              // console.log('-----', node.key, 'pushing ---', val.key)
-              // check for collision
               streamQueue.push(val)
             }
             missing--
             if (!missing) {
-              // console.log('-----', node.key, 'callback')
               cb(error, true)
             }
           })
         }
       }
     }
-    // console.log('(', missing, ')', node.key)
     if (!missing) {
-      // console.log(node.key, 'nothing called')
       cb(null, true)
     }
   }
