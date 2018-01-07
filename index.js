@@ -779,7 +779,6 @@ DB.prototype.createReadStream = function (key, opts) {
   var path = hash(key, true)
   var cacheMax = opts.cacheSize || 128
   var keyCache = new LRU(cacheMax)
-  var visited = {}
   var streamQueue
   var stream = new Readable({ objectMode: true })
   stream._read = read
@@ -811,7 +810,6 @@ DB.prototype.createReadStream = function (key, opts) {
     // sort stream queue first to ensure that you always get the latest node
     // this requires offsetting feeds sequences based on when it started in relation to others
     streamQueue.sort(sortQueueByClockAndSeq)
-    // console.log(streamQueue.length);
     var data = streamQueue.shift()
     var node = data.node
     readNext(node, data.index, (err, match) => {
@@ -916,24 +914,27 @@ DB.prototype.createReadStream = function (key, opts) {
           writers[entry.feed].get(entry.seq, (err, val) => {
             if (err) {
               error = err
-            } else {
+            } else if (val.key && val.value) {
               streamQueue.push({ node: val, index: i + 1 })
             }
             missing--
             if (!missing) {
-              streamQueue.push({ node: node, index: i + 1 })
-              cb(error, false)
+              if (i < node.trie.length) {
+                streamQueue.push({ node: node, index: i + 1 })
+                cb(error, false)
+              } else {
+                cb(error, true)
+              }
             }
           })
         }
       }
       if (missing > 0) return
     }
-    if (i === node.path.length) {
+    if (i >= node.path.length - 1) {
       return cb(null, true)
     }
-    streamQueue.push({ node: node, index: i + 1 })
-    cb(null, false)
+    readNext(node, i + 1, cb)
   }
 }
 
