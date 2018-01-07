@@ -10,7 +10,7 @@ var events = require('events')
 var inherits = require('inherits')
 var toBuffer = require('to-buffer')
 var varint = require('varint')
-var Readable = require('stream').Readable
+var Readable = require('readable-stream').Readable
 var bulk = require('bulk-write-stream')
 var LRU = require('lru')
 var once = require('once')
@@ -786,6 +786,7 @@ DB.prototype.createReadStream = function (key, opts) {
   return stream
 
   function read () {
+    if (stream.destroyed) return
     // if no heads - get heads and process first tries
     if (!streamQueue) {
       self.heads(function (err, heads) {
