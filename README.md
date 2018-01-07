@@ -82,6 +82,10 @@ Insert a batch of values efficiently, in a single atomic transaction. A batch sh
 }
 ```
 
+#### `var stream = db.createReadStream([prefix])`
+
+Create a readable stream. Returns all nodes that match the prefix in order from newest to oldest.
+
 #### `var stream = db.createWriteStream()`
 
 Create a writable stream.
