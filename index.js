@@ -811,6 +811,7 @@ DB.prototype.createReadStream = function (key, opts) {
     // sort stream queue first to ensure that you always get the latest node
     // this requires offsetting feeds sequences based on when it started in relation to others
     streamQueue.sort(sortQueueByClockAndSeq)
+    // console.log(streamQueue.length);
     var data = streamQueue.shift()
     var node = data.node
     readNext(node, data.index, (err, match) => {
@@ -870,8 +871,6 @@ DB.prototype.createReadStream = function (key, opts) {
     var missing = 0
     var error
     var vals
-    var id = node.feed + ',' + node.seq
-    visited[id] = true
     for (; i < path.length - 1; i++) {
       if (node.path[i] === path[i]) continue
       // check trie
@@ -907,36 +906,34 @@ DB.prototype.createReadStream = function (key, opts) {
 
     // Traverse the rest of the node's trie, recursively,
     // hunting for more nodes with the desired prefix.
-    for (var k = path.length - 2; k < node.trie.length; k++) {
-      trie = node.trie[k] || []
-      for (i = 0; i < trie.length; i++) {
-        var entrySet = trie[i] || []
+    for (; i < node.trie.length; i++) {
+      trie = node.trie[i] || []
+      for (j = 0; j < trie.length; j++) {
+        var entrySet = trie[j] || []
         for (var el = 0; el < entrySet.length; el++) {
           var entry = entrySet[el]
-
-          // TODO: figure out a better way to ensure we don't revisit nodes
-          // this cache will not scale well
-          id = entry.feed + ',' + entry.seq
-          if (visited[id]) continue
-          visited[id] = true
           missing++
-          writers[entry.feed].get(entry.seq, function (err, val) {
+          writers[entry.feed].get(entry.seq, (err, val) => {
             if (err) {
               error = err
             } else {
-              streamQueue.push({ node: val, index: i })
+              streamQueue.push({ node: val, index: i + 1 })
             }
             missing--
             if (!missing) {
-              cb(error, true)
+              streamQueue.push({ node: node, index: i + 1 })
+              cb(error, false)
             }
           })
         }
       }
+      if (missing > 0) return
     }
-    if (!missing) {
-      cb(null, true)
+    if (i === node.path.length) {
+      return cb(null, true)
     }
+    streamQueue.push({ node: node, index: i + 1 })
+    cb(null, false)
   }
 }
 
