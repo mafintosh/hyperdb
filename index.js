@@ -810,7 +810,7 @@ DB.prototype.createReadStream = function (key, opts) {
     }
     // sort stream queue first to ensure that you always get the latest node
     // this requires offsetting feeds sequences based on when it started in relation to others
-    streamQueue.sort(sortNodesByClockAndSeq)
+    streamQueue.sort(sortQueueByClockAndSeq)
     var data = streamQueue.shift()
     var node = data.node
     readNext(node, data.index, (err, match) => {
@@ -828,6 +828,21 @@ DB.prototype.createReadStream = function (key, opts) {
       })
     })
   }
+
+  function sortQueueByClockAndSeq (a, b) {
+    a = a.node
+    b = b.node
+    var sortValue = sortNodesByClock(a, b)
+    if (sortValue !== 0) return sortValue
+    // same time, so use sequence to order
+    if (a.feed === b.feed) return b.seq - a.seq
+    var bOffset = b.clock.reduce((p, v) => p + v, b.seq)
+    var aOffset = a.clock.reduce((p, v) => p + v, a.seq)
+    // if real sequence is the same then return sort on feed
+    if (bOffset === aOffset) return a.feed - b.feed
+    return bOffset - aOffset
+  }
+
   function check (node, cb) {
     // is it actually a match and not a collision
     if (!(node && node.key && node.key.indexOf(key) === 0)) return cb()
@@ -1331,20 +1346,6 @@ function sortNodesByClock (a, b) {
   if (isLess) return 1
   if (isGreater) return -1
   return 0
-}
-
-function sortNodesByClockAndSeq (a, b) {
-  a = a.node
-  b = b.node
-  var sortValue = sortNodesByClock(a, b)
-  if (sortValue !== 0) return sortValue
-  // same time, so use sequence to order
-  if (a.feed === b.feed) return b.seq - a.seq
-  var bOffset = b.clock.reduce((p, v) => p + v, b.seq)
-  var aOffset = a.clock.reduce((p, v) => p + v, a.seq)
-  // if real sequence is the same then return sort on feed
-  if (bOffset === aOffset) return a.feed - b.feed
-  return bOffset - aOffset
 }
 
 // Buffer -> [Head]
