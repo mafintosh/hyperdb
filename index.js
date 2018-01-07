@@ -795,7 +795,7 @@ DB.prototype.createReadStream = function (key, opts) {
           stream.push(null)
           return
         }
-        streamQueue = heads
+        streamQueue = heads.map(h => ({ node: h, index: 0 }))
         next()
       })
       return
@@ -811,8 +811,9 @@ DB.prototype.createReadStream = function (key, opts) {
     // sort stream queue first to ensure that you always get the latest node
     // this requires offsetting feeds sequences based on when it started in relation to others
     streamQueue.sort(sortNodesByClockAndSeq)
-    var node = streamQueue.shift()
-    readNext(node, 0, (err, match) => {
+    var data = streamQueue.shift()
+    var node = data.node
+    readNext(node, data.index, (err, match) => {
       if (err) {
         return stream.emit('error', err)
       }
@@ -878,7 +879,7 @@ DB.prototype.createReadStream = function (key, opts) {
             error = err
           } else {
             // i think this could be optimised by saving the paths index with the node
-            streamQueue.push(val)
+            streamQueue.push({ node: val, index: i })
           }
           missing--
           if (!missing) {
@@ -908,7 +909,7 @@ DB.prototype.createReadStream = function (key, opts) {
             if (err) {
               error = err
             } else {
-              streamQueue.push(val)
+              streamQueue.push({ node: val, index: i })
             }
             missing--
             if (!missing) {
@@ -1333,6 +1334,8 @@ function sortNodesByClock (a, b) {
 }
 
 function sortNodesByClockAndSeq (a, b) {
+  a = a.node
+  b = b.node
   var sortValue = sortNodesByClock(a, b)
   if (sortValue !== 0) return sortValue
   // same time, so use sequence to order
