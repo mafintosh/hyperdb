@@ -808,8 +808,9 @@ DB.prototype.createReadStream = function (key, opts) {
       stream.push(null)
       return
     }
-    // sort stream queue first to ensure that you always get the latest first
-    streamQueue.sort(sortNodesByClock)
+    // sort stream queue first to ensure that you always get the latest node
+    // this requires offsetting feeds sequences based on when it started in relation to others
+    streamQueue.sort(sortNodesByClockAndSeq)
     var node = streamQueue.shift()
     readNext(node, 0, (err, match) => {
       if (err) {
@@ -820,7 +821,7 @@ DB.prototype.createReadStream = function (key, opts) {
       check(node, (matchingNode) => {
         if (!matchingNode) next()
         else {
-          keyCache.set(matchingNode.key, true)
+          keyCache.set(node.key, true)
           stream.push(matchingNode)
         }
       })
@@ -832,18 +833,19 @@ DB.prototype.createReadStream = function (key, opts) {
     // have we encountered this node before
     if (keyCache.get(node.key)) return cb()
     // it is not in the cache but might still be a duplicate if cache is full
-    if (keyCache.length === cacheMax) {
-      // so check if this is the first instance of the node
-      return self.get(node.key, (err, latest) => {
-        if (err) return stream.emit('error', err)
-        if (sortNodesByClock(latest, node) >= 0) {
-          cb(latest)
-        } else {
-          cb()
-        }
-      })
-    }
-    cb(node)
+    // if (keyCache.length === cacheMax) {
+    // so check if this is the first instance of the node
+    // TODO: Atm this is a bit of a hack to get conflicting values
+    // ideally this should not need to retraverse the trie.
+    // Potential issue here when db is updated after stream was created!
+    return self._get(node.key, false, [], noop, (err, latest) => {
+      if (err) return stream.emit('error', err)
+      if (sortNodesByClock(Array.isArray(latest) ? latest[0] : latest, node) >= 0) {
+        cb(latest)
+      } else {
+        cb()
+      }
+    })
   }
 
   function readNext (node, i, cb) {
@@ -1324,10 +1326,22 @@ function sortNodesByClock (a, b) {
     if (diff > 0) isGreater = true
     if (diff < 0) isLess = true
   }
-  if (isGreater && isLess) return b.seq - a.seq // same time, so use sequence to order
+  if (isGreater && isLess) return 0
   if (isLess) return 1
   if (isGreater) return -1
-  return b.seq - a.seq // neither is set, so equal
+  return 0
+}
+
+function sortNodesByClockAndSeq (a, b) {
+  var sortValue = sortNodesByClock(a, b)
+  if (sortValue !== 0) return sortValue
+  // same time, so use sequence to order
+  if (a.feed === b.feed) return b.seq - a.seq
+  var bOffset = b.clock.reduce((p, v) => p + v, b.seq)
+  var aOffset = a.clock.reduce((p, v) => p + v, a.seq)
+  // if real sequence is the same then return sort on feed
+  if (bOffset === aOffset) return a.feed - b.feed
+  return bOffset - aOffset
 }
 
 // Buffer -> [Head]
