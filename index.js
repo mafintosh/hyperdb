@@ -780,6 +780,7 @@ DB.prototype.createReadStream = function (key, opts) {
   var cacheMax = opts.cacheSize || 128
   var keyCache = new LRU(cacheMax)
   var streamQueue
+  var queueNeedsSorting = true
   var stream = new Readable({ objectMode: true })
   stream._read = read
 
@@ -810,8 +811,8 @@ DB.prototype.createReadStream = function (key, opts) {
     }
     // sort stream queue first to ensure that you always get the latest node
     // this requires offsetting feeds sequences based on when it started in relation to others
-    streamQueue.sort(sortQueueByClockAndSeq)
-    var data = streamQueue.shift()
+    if (queueNeedsSorting) streamQueue.sort(sortQueueByClockAndSeq)
+    var data = streamQueue.pop()
     var node = data.node
     readNext(node, data.index, (err, match) => {
       if (err) {
@@ -835,12 +836,12 @@ DB.prototype.createReadStream = function (key, opts) {
     var sortValue = sortNodesByClock(a, b)
     if (sortValue !== 0) return sortValue
     // same time, so use sequence to order
-    if (a.feed === b.feed) return b.seq - a.seq
+    if (a.feed === b.feed) return a.seq - b.seq
     var bOffset = b.clock.reduce((p, v) => p + v, b.seq)
     var aOffset = a.clock.reduce((p, v) => p + v, a.seq)
     // if real sequence is the same then return sort on feed
-    if (bOffset === aOffset) return a.feed - b.feed
-    return bOffset - aOffset
+    if (bOffset === aOffset) return b.feed - a.feed
+    return aOffset - bOffset
   }
 
   function check (node, cb) {
@@ -856,7 +857,7 @@ DB.prototype.createReadStream = function (key, opts) {
     // Potential issue here when db is updated after stream was created!
     return self._get(node.key, false, [], noop, (err, latest) => {
       if (err) return stream.emit('error', err)
-      if (sortNodesByClock(Array.isArray(latest) ? latest[0] : latest, node) >= 0) {
+      if (sortNodesByClock(node, Array.isArray(latest) ? latest[0] : latest) >= 0) {
         cb(latest)
       } else {
         cb()
@@ -891,8 +892,7 @@ DB.prototype.createReadStream = function (key, opts) {
           if (err) {
             error = err
           } else {
-            // i think this could be optimised by saving the paths index with the node
-            streamQueue.push({ node: val, index: i })
+            pushToQueue({ node: val, index: i })
           }
           missing--
           if (!missing) {
@@ -916,12 +916,12 @@ DB.prototype.createReadStream = function (key, opts) {
             if (err) {
               error = err
             } else if (val.key && val.value) {
-              streamQueue.push({ node: val, index: i + 1 })
+              pushToQueue({ node: val, index: i + 1 })
             }
             missing--
             if (!missing) {
               if (i < node.trie.length) {
-                streamQueue.push({ node: node, index: i + 1 })
+                pushToQueue({ node: node, index: i + 1 })
                 cb(error, false)
               } else {
                 cb(error, true)
@@ -932,10 +932,12 @@ DB.prototype.createReadStream = function (key, opts) {
       }
       if (missing > 0) return
     }
-    if (i >= node.path.length - 1) {
-      return cb(null, true)
-    }
-    readNext(node, i + 1, cb)
+    return cb(null, true)
+  }
+
+  function pushToQueue (item) {
+    queueNeedsSorting = streamQueue.length > 0 && (sortQueueByClockAndSeq(item, streamQueue[streamQueue.length - 1]) < 0)
+    streamQueue.push(item)
   }
 }
 
@@ -1342,8 +1344,8 @@ function sortNodesByClock (a, b) {
     if (diff < 0) isLess = true
   }
   if (isGreater && isLess) return 0
-  if (isLess) return 1
-  if (isGreater) return -1
+  if (isLess) return -1
+  if (isGreater) return 1
   return 0
 }
 
