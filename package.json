@@ -15,6 +15,7 @@
     "once": "^1.4.0",
     "protocol-buffers": "^3.2.1",
     "random-access-file": "^1.8.1",
+    "readable-stream": "^2.3.3",
     "sodium-universal": "^1.4.0",
     "thunky": "^1.0.2",
     "to-buffer": "^1.1.0",

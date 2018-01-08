@@ -1,38 +1,12 @@
 var tape = require('tape')
 var create = require('./helpers/create')
 var replicate = require('./helpers/replicate')
-
-function promisedPut (db, key, val) {
-  return new Promise((resolve, reject) => db.put(key, val, (e) => {
-    if (e) return reject(e)
-    resolve()
-  }))
-}
-
-function populate (db, vals, offset, cb) {
-  var promised = vals.reduce((p, v, i) => {
-    return p.then(() => promisedPut(db, v, (offset || 0) + i))
-  }, Promise.resolve())
-  promised.then(cb).catch(e => cb(e))
-  // There appears to be a issue with writeStream.
-  // var writer = db.createWriteStream()
-  // writer.write(vals.map((v, i) => ({
-  //   type: 'put',
-  //   key: v,
-  //   value: (offset || 0) + i
-  // })))
-  // // setTimeout(() => {
-  // writer.end((err) => {
-  //   cb(err)
-  // })
-  // // }, 200)
-}
+var populate = require('./helpers/populate')
 
 tape('basic readStream', { timeout: 1000 }, function (t) {
   var db = create.one()
   var vals = ['foo', 'foo/a', 'foo/b', 'aa', 'bb', 'c', 'bar/baz', 'foo/abc', 'foo/b', 'bar/cat', 'foo/bar', 'bar/cat', 'something']
-  vals = vals.concat(vals)
-  vals = vals.concat(vals)
+  var expected = ['foo/a', 'foo/abc', 'foo/b', 'foo/bar']
   vals = vals.concat(vals)
   vals = vals.concat(vals)
   vals = vals.concat(vals)
@@ -42,14 +16,14 @@ tape('basic readStream', { timeout: 1000 }, function (t) {
   function validate (err) {
     t.error(err, 'no error')
     var reader = db.createReadStream('foo/')
-    var fooCount = 0
+    var previousValue = 100000000
     reader.on('data', (data) => {
-      if (data.key === 'foo/b') fooCount++
-      // console.log('data,', data.key, '----', data.value)
+      t.ok(previousValue > data.value)
+      t.same(data.key, expected.pop())
+      previousValue = data.value
     })
     reader.on('end', () => {
-      t.equals(fooCount, 1)
-      t.pass('stream ended ok')
+      t.equals(expected.length, 0)
       t.end()
     })
     reader.on('error', (err) => {
