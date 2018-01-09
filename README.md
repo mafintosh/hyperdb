@@ -132,7 +132,7 @@ Find out about changes in key/value pairs between the version `checkout` and
 `head` for all keys prefixed by `key`.
 
 `checkout` and `head` are versions to use to compare against. If not provided,
-`head is the current HEAD of the database, and `checkout` is the beginning of
+`head` is the current HEAD of the database, and `checkout` is the beginning of
 time.
 
 `stream` is a readable object stream that outputs modifications like
@@ -147,10 +147,10 @@ that occured between `checkout` and `head`. When multiple feeds conflict for the
 value of a key at a point in time, `nodes` will have multiple entries. `<node>`
 is the full hyperdb node.
 
-#### `var stream = db.createHistoryStream([opts, ][start])
+#### `var stream = db.createHistoryStream([opts, ][start])`
 
 Returns a readable stream of node objects covering all historic values since
-either the beginning of time, or the [version](#dbversioncallback) `opts.start.
+either the beginning of time, or the [version](#dbversioncallback) `opts.start`.
 
 Valid opts include:
 
