@@ -30,10 +30,16 @@ db.put('/hello', 'world', function (err) {
 
 Create a new hyperdb.
 
-`storage` is a function that is called with every filename hyperdb needs to
-operate on. There are many providers for the
+`storage` can be a string or a function. If a string like the above example, the
+[random-access-file](https://github.com/mafintosh/random-access-file) storage
+module is used; the resulting folder with the data will be whatever `storage` is
+set to.
+
+If `storage` is a function, it will be called with every filename hyperdb needs
+to operate on. There are many providers for the
 [abstract-random-access](https://github.com/juliangruber/abstract-random-access)
 interface. e.g.
+
 ```js
    var ram = require('random-access-memory')
    var feed = hyperdb(function (filename) {
