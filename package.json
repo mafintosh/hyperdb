@@ -4,7 +4,7 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "standard && tape test/*.js"
   },
   "author": "",
   "license": "ISC",
@@ -14,5 +14,9 @@
     "random-access-memory": "^2.4.0",
     "sodium-universal": "^1.4.0",
     "to-buffer": "^1.1.0"
+  },
+  "devDependencies": {
+    "standard": "^10.0.3",
+    "tape": "^4.8.0"
   }
 }
