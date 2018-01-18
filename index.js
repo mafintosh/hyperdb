@@ -2,6 +2,7 @@ var from = require('from2')
 var hash = require('./lib/hash')
 var iterator = require('./lib/iterator')
 var differ = require('./lib/differ')
+var changes = require('./lib/changes')
 
 module.exports = DB
 
@@ -76,7 +77,8 @@ DB.prototype.put = function (key, val, cb) {
     clock: clock,
     key: key,
     value: val,
-    trie: []
+    trie: [],
+    [require('util').inspect.custom]: inspect
   }
 
   if (!heads.length) {
@@ -90,6 +92,10 @@ DB.prototype.put = function (key, val, cb) {
 
   writable.push(node)
   process.nextTick(cb, null)
+}
+
+function inspect () {
+  return `Node(key=${this.key}, value=${this.value}, seq=${this.seq}, feed=${this.feed})`
 }
 
 DB.prototype._put = function (node, i, head) {
@@ -260,6 +266,10 @@ DB.prototype._get = function (key, opts, i, head, results, lock, locks) {
   }
 }
 
+DB.prototype._getPointer = function (feed, seq, cb) {
+  process.nextTick(cb, null, this._feeds[feed][seq])
+}
+
 DB.prototype.list = function (prefix, opts, cb) {
   if (typeof opts === 'function') return this.list(prefix, null, opts)
 
@@ -276,6 +286,10 @@ DB.prototype.list = function (prefix, opts, cb) {
   }
 }
 
+DB.prototype.changes = function () {
+  return changes(this)
+}
+
 DB.prototype.diff = function (other, prefix, opts) {
   var left = this.iterator(prefix, opts)
   var right = other.iterator(prefix, opts)
@@ -286,19 +300,19 @@ DB.prototype.iterator = function (prefix, opts) {
   return iterator(this, normalizeKey(prefix || '/'), opts)
 }
 
+DB.prototype.createChangesStream = function () {
+  return iteratorToStream(this.changes())
+}
+
 DB.prototype.createDiffStream = function (other, prefix, opts) {
-  var diff = this.diff(other, prefix, opts)
-
-  return from.obj(read)
-
-  function read (size, cb) {
-    diff.next(cb)
-  }
+  return iteratorToStream(this.diff(other, prefix, opts))
 }
 
 DB.prototype.createReadStream = function (prefix, opts) {
-  var ite = this.iterator(prefix, opts)
+  return iteratorToStream(this.iterator(prefix, opts))
+}
 
+function iteratorToStream (ite) {
   return from.obj(read)
 
   function read (size, cb) {
