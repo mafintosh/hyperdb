@@ -326,8 +326,8 @@ function isPrefix (key, prefix) {
 }
 
 function normalizeKey (key) {
-  if (!key.length) return '/'
-  return key[0] === '/' ? key : '/' + key
+  if (!key.length) return ''
+  return key[0] === '/' ? key.slice(1) : key
 }
 
 function noop () {}
