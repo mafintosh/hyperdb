@@ -186,6 +186,19 @@ function pushNoDups (list, val) {
 
 DB.prototype.get = function (key, opts, cb) {
   if (typeof opts === 'function') return this.get(key, null, opts)
+
+  var self = this
+  this._getNodes(key, opts, onnodes)
+
+  function onnodes (err, results) {
+    if (err) return cb(err)
+    if (self._map) results = results.map(self._map)
+    if (self._reduce) results = results.length ? results.reduce(self._reduce) : null
+    cb(null, results)
+  }
+}
+
+DB.prototype._getNodes = function (key, opts, cb) {
   key = normalizeKey(key)
 
   var results = []
@@ -194,11 +207,8 @@ DB.prototype.get = function (key, opts, cb) {
   var locks = getLocks(heads, this._feeds.length)
 
   for (var i = 0; i < heads.length; i++) {
-    this._get(key, opts, 0, heads[i], results, heads[i], locks)
+    this._getNodesFromHead(key, opts, 0, heads[i], results, heads[i], locks)
   }
-
-  if (this._map) results = results.map(this._map)
-  if (this._reduce) results = results.length ? results.reduce(this._reduce) : null
 
   process.nextTick(cb, null, results)
 }
@@ -213,11 +223,11 @@ DB.prototype._getForks = function (key, opts, i, ptrs, results, lock, locks) {
   }
 
   for (var j = 0; j < nodes.length; j++) {
-    this._get(key, opts, i + 1, nodes[j], results, nodes[j], locks)
+    this._getNodesFromHead(key, opts, i + 1, nodes[j], results, nodes[j], locks)
   }
 }
 
-DB.prototype._get = function (key, opts, i, head, results, lock, locks) {
+DB.prototype._getNodesFromHead = function (key, opts, i, head, results, lock, locks) {
   var prefixed = !!(opts && opts.prefix)
 
   // If no head -> 404
@@ -297,7 +307,8 @@ DB.prototype.diff = function (other, prefix, opts) {
 }
 
 DB.prototype.iterator = function (prefix, opts) {
-  return iterator(this, normalizeKey(prefix || '/'), opts)
+  if (isOptions(prefix)) return this.iterator('', prefix)
+  return iterator(this, normalizeKey(prefix || ''), opts)
 }
 
 DB.prototype.createChangesStream = function () {
@@ -305,6 +316,7 @@ DB.prototype.createChangesStream = function () {
 }
 
 DB.prototype.createDiffStream = function (other, prefix, opts) {
+  if (isOptions(prefix)) return this.createDiffStream(other, '', prefix)
   return iteratorToStream(this.diff(other, prefix, opts))
 }
 
@@ -320,8 +332,12 @@ function iteratorToStream (ite) {
   }
 }
 
+function isOptions (opts) {
+  return typeof opts === 'object' && !!opts
+}
+
 function isPrefix (key, prefix) {
-  if (!prefix.length || prefix[prefix.length - 1] !== '/') prefix += '/'
+  if (prefix.length && prefix[0] === '/') prefix.slice(1)
   return key.slice(0, prefix.length) === prefix
 }
 
