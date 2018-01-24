@@ -301,10 +301,8 @@ DB.prototype.changes = function () {
 }
 
 DB.prototype.diff = function (other, prefix, opts) {
-  if (!other) other = checkoutEmpty(this)
-  var left = this.iterator(prefix, opts)
-  var right = other.iterator(prefix, opts)
-  return differ(left, right)
+  if (isOptions(prefix)) return this.diff(other, null, prefix)
+  return differ(this, other || checkoutEmpty(this), prefix || '', opts)
 }
 
 function checkoutEmpty (db) {
