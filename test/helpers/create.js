@@ -1,4 +1,5 @@
 var hyperdb = require('../../')
+var replicate = require('./replicate')
 var reduce = (a, b) => a
 
 exports.one = function () {
@@ -6,5 +7,7 @@ exports.one = function () {
 }
 
 exports.two = function (cb) {
-  cb(hyperdb({id: 0}), hyperdb({id: 1}))
+  var a = hyperdb({id: 0})
+  var b = hyperdb({id: 1})
+  cb(a, b, replicate.bind(null, a, b))
 }
