@@ -1,6 +1,7 @@
 var tape = require('tape')
 var create = require('./helpers/create')
 var put = require('./helpers/put')
+var run = require('./helpers/run')
 
 tape('basic iteration', function (t) {
   var db = create.one()
@@ -107,6 +108,124 @@ tape('non recursive iteration', function (t) {
   })
 })
 
+tape('two writers, one fork', function (t) {
+  create.two(function (db1, db2, replicate) {
+    run(
+      cb => db1.put('0', '0', cb),
+      cb => db2.put('2', '2', cb),
+      cb => db2.put('3', '3', cb),
+      cb => db2.put('4', '4', cb),
+      cb => db2.put('5', '5', cb),
+      cb => db2.put('6', '6', cb),
+      cb => db2.put('7', '7', cb),
+      cb => db2.put('8', '8', cb),
+      cb => db2.put('9', '9', cb),
+      cb => replicate(cb),
+      cb => db1.put('1', '1a', cb),
+      cb => db2.put('1', '1b', cb),
+      cb => replicate(cb),
+      cb => db1.put('0', '00', cb),
+      cb => replicate(cb),
+      cb => db2.put('hi', 'ho', cb),
+      done
+    )
+
+    function done (err) {
+      t.error(err, 'no error')
+
+      all(db1.iterator(), function (err, vals) {
+        t.error(err, 'no error')
+        t.same(vals, {
+          '0': ['00'],
+          '1': ['1a', '1b'],
+          '2': ['2'],
+          '3': ['3'],
+          '4': ['4'],
+          '5': ['5'],
+          '6': ['6'],
+          '7': ['7'],
+          '8': ['8'],
+          '9': ['9']
+        })
+        all(db2.iterator(), function (err, vals) {
+          t.error(err, 'no error')
+          t.same(vals, {
+            '0': ['00'],
+            '1': ['1a', '1b'],
+            '2': ['2'],
+            '3': ['3'],
+            '4': ['4'],
+            '5': ['5'],
+            '6': ['6'],
+            '7': ['7'],
+            '8': ['8'],
+            '9': ['9'],
+            'hi': ['ho']
+          })
+          t.end()
+        })
+      })
+    }
+  })
+})
+
+tape('two writers, one fork, many values', function (t) {
+  var r = range(100, 'i')
+
+  create.two(function (db1, db2, replicate) {
+    run(
+      cb => db1.put('0', '0', cb),
+      cb => db2.put('2', '2', cb),
+      cb => db2.put('3', '3', cb),
+      cb => db2.put('4', '4', cb),
+      cb => db2.put('5', '5', cb),
+      cb => db2.put('6', '6', cb),
+      cb => db2.put('7', '7', cb),
+      cb => db2.put('8', '8', cb),
+      cb => db2.put('9', '9', cb),
+      cb => replicate(cb),
+      cb => db1.put('1', '1a', cb),
+      cb => db2.put('1', '1b', cb),
+      cb => replicate(cb),
+      cb => db1.put('0', '00', cb),
+      r.map(i => cb => db1.put(i, i, cb)),
+      cb => replicate(cb),
+      done
+    )
+
+    function done (err) {
+      t.error(err, 'no error')
+
+      var expected = {
+        '0': ['00'],
+        '1': ['1a', '1b'],
+        '2': ['2'],
+        '3': ['3'],
+        '4': ['4'],
+        '5': ['5'],
+        '6': ['6'],
+        '7': ['7'],
+        '8': ['8'],
+        '9': ['9']
+      }
+
+      r.forEach(function (v) {
+        expected[v] = [v]
+      })
+
+      all(db1.iterator(), function (err, vals) {
+        t.error(err, 'no error')
+        t.same(vals, expected)
+        all(db2.iterator(), function (err, vals) {
+          t.error(err, 'no error')
+          t.same(vals, expected)
+          t.end()
+        })
+      })
+    }
+  })
+})
+
 function range (n, v) {
   // #0, #1, #2, ...
   return new Array(n).join('.').split('.').map((a, i) => v + i)
@@ -126,7 +245,9 @@ function all (ite, cb) {
   ite.next(function loop (err, node) {
     if (err) return cb(err)
     if (!node) return cb(null, vals)
-    vals[node.key] = node.value
+    var key = Array.isArray(node) ? node[0].key : node.key
+    if (vals[key]) return cb(new Error('duplicate node for ' + key))
+    vals[key] = Array.isArray(node) ? node.map(n => n.value) : node.value
     ite.next(loop)
   })
 }

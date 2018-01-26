@@ -1,5 +1,6 @@
 var tape = require('tape')
 var create = require('./helpers/create')
+var run = require('./helpers/run')
 
 tape('basic put/get', function (t) {
   var db = create.one()
@@ -242,6 +243,54 @@ tape('race works', function (t) {
       t.same(node.value, val, 'same value')
     })
   }
+})
+
+tape('two writers, no conflicts, many values', function (t) {
+  t.plan(1 + 3 * 4)
+
+  create.two(function (db1, db2, replicate) {
+    var r = []
+    for (var i = 0; i < 10000; i++) r.push('i' + i)
+
+    run(
+      cb => db1.put('0', '0', cb),
+      cb => replicate(cb),
+      cb => db2.put('a', 'a', cb),
+      cb => replicate(cb),
+      cb => db2.put('2', '2', cb),
+      cb => db2.put('3', '3', cb),
+      cb => db2.put('4', '4', cb),
+      cb => db2.put('5', '5', cb),
+      cb => db2.put('6', '6', cb),
+      cb => db2.put('7', '7', cb),
+      cb => db2.put('8', '8', cb),
+      cb => db2.put('9', '9', cb),
+      cb => replicate(cb),
+      cb => db1.put('b', 'b', cb),
+      cb => db2.put('c', 'c', cb),
+      cb => replicate(cb),
+      cb => db2.put('d', 'd', cb),
+      cb => replicate(cb),
+      r.map(i => cb => db1.put(i, i, cb)),
+      done
+    )
+
+    function done (err) {
+      t.error(err, 'no error')
+      db2.get('a', expect('a'))
+      db1.get('0', expect('0'))
+      db1.get('i424', expect('i424'))
+
+      function expect (v) {
+        return function (err, nodes) {
+          t.error(err, 'no error')
+          t.same(nodes.length, 1)
+          t.same(nodes[0].key, v)
+          t.same(nodes[0].value, v)
+        }
+      }
+    }
+  })
 })
 
 /*
