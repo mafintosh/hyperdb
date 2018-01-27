@@ -9,8 +9,9 @@
   "author": "",
   "license": "ISC",
   "dependencies": {
-    "from2": "^2.3.0",
     "hypercore": "^6.10.1",
+    "inherits": "^2.0.3",
+    "nanoiterator": "^1.0.0",
     "random-access-memory": "^2.4.0",
     "sodium-universal": "^2.0.0",
     "to-buffer": "^1.1.0"
