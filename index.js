@@ -1,4 +1,4 @@
-var from = require('from2')
+var toStream = require('nanoiterator/to-stream')
 var hash = require('./lib/hash')
 var iterator = require('./lib/iterator')
 var differ = require('./lib/differ')
@@ -317,24 +317,16 @@ DB.prototype.iterator = function (prefix, opts) {
 }
 
 DB.prototype.createChangesStream = function () {
-  return iteratorToStream(this.changes())
+  return toStream(this.changes())
 }
 
 DB.prototype.createDiffStream = function (other, prefix, opts) {
   if (isOptions(prefix)) return this.createDiffStream(other, '', prefix)
-  return iteratorToStream(this.diff(other, prefix, opts))
+  return toStream(this.diff(other, prefix, opts))
 }
 
 DB.prototype.createReadStream = function (prefix, opts) {
-  return iteratorToStream(this.iterator(prefix, opts))
-}
-
-function iteratorToStream (ite) {
-  return from.obj(read)
-
-  function read (size, cb) {
-    ite.next(cb)
-  }
+  return toStream(this.iterator(prefix, opts))
 }
 
 function isOptions (opts) {
