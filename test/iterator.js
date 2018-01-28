@@ -241,6 +241,24 @@ tape('two writers, one fork, many values', function (t) {
   })
 })
 
+tape('list buffers an iterator', function (t) {
+  var db = create.one()
+
+  put(db, ['a', 'b', 'b/c'], function (err) {
+    t.error(err, 'no error')
+    db.list(function (err, all) {
+      t.error(err, 'no error')
+      t.same(all.map(v => v.key).sort(), ['a', 'b', 'b/c'])
+      db.list('b', function (err, all) {
+        t.error(err, 'no error')
+        t.same(all.length, 1)
+        t.same(all[0].key, 'b/c')
+        t.end()
+      })
+    })
+  })
+})
+
 function range (n, v) {
   // #0, #1, #2, ...
   return new Array(n).join('.').split('.').map((a, i) => v + i)

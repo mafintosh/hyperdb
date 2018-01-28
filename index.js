@@ -281,6 +281,7 @@ DB.prototype._getPointer = function (feed, seq, cb) {
 }
 
 DB.prototype.list = function (prefix, opts, cb) {
+  if (typeof prefix === 'function') return this.list('', null, prefix)
   if (typeof opts === 'function') return this.list(prefix, null, opts)
 
   var ite = this.iterator(prefix, opts)
@@ -334,7 +335,7 @@ function isOptions (opts) {
 }
 
 function isPrefix (key, prefix) {
-  if (prefix.length && prefix[0] === '/') prefix.slice(1)
+  if (prefix.length && prefix[0] === '/') prefix = prefix.slice(1)
   return key.slice(0, prefix.length) === prefix
 }
 

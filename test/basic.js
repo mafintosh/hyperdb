@@ -293,6 +293,48 @@ tape('two writers, no conflicts, many values', function (t) {
   })
 })
 
+tape('two writers, one conflict', function (t) {
+  t.plan(1 + 4 * 2 + 6 * 2)
+  create.two(function (db1, db2, replicate) {
+    run(
+      cb => db1.put('a', 'a', cb),
+      cb => replicate(cb),
+      cb => db1.put('b', 'b', cb),
+      cb => db2.put('b', 'B', cb),
+      cb => replicate(cb),
+      cb => db1.put('a', 'A', cb),
+      cb => replicate(cb),
+      done
+    )
+
+    function done (err) {
+      t.error(err, 'no error')
+
+      db1.get('a', ona)
+      db2.get('a', ona)
+      db1.get('b', onb)
+      db2.get('b', onb)
+
+      function onb (err, nodes) {
+        t.error(err, 'no error')
+        nodes.sort((a, b) => a.value.localeCompare(b.value))
+        t.same(nodes.length, 2)
+        t.same(nodes[0].key, 'b')
+        t.same(nodes[0].value, 'b')
+        t.same(nodes[1].key, 'b')
+        t.same(nodes[1].value, 'B')
+      }
+
+      function ona (err, nodes) {
+        t.error(err, 'no error')
+        t.same(nodes.length, 1)
+        t.same(nodes[0].key, 'a')
+        t.same(nodes[0].value, 'A')
+      }
+    }
+  })
+})
+
 /*
 tape('batch', function (t) {
   t.plan(17)
