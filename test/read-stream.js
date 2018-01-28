@@ -13,11 +13,8 @@ function indexWithKey (key) {
 
 tape('basic readStream', { timeout: 1000 }, function (t) {
   var db = create.one()
-  var vals = ['foo', 'foo/a', 'foo/b', 'aa', 'bb', 'c', 'bar/baz', 'foo/abc', 'foo/b', 'bar/cat', 'foo/bar', 'bar/cat', 'foo/b/c']
-  vals = vals.concat(vals)
-  vals = vals.concat(vals)
-  vals = vals.map(toKeyValuePairs())
-  var expected = ['foo/a', 'foo/abc', 'foo/b', 'foo/bar', 'foo/b/c']
+  var vals = ['foo', 'foo/a', 'foo/b', 'a', 'bar/a', 'foo/abc', 'foo/b', 'bar/b', 'foo/bar', 'foo/a/b']
+  var expected = ['foo/a', 'foo/abc', 'foo/b', 'foo/bar', 'foo/a/b']
   put(db, vals, validate)
 
   function validate (err) {
