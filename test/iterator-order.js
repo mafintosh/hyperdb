@@ -5,11 +5,9 @@ var run = require('./helpers/run')
 var hash = require('../lib/hash')
 
 function sortByHash (a, b) {
-  var ha = hash(typeof a === 'string' ? a : a.key, true).join('')
-  var hb = hash(typeof b === 'string' ? b : b.key, true).join('')
-  if (ha < hb) return -1
-  if (ha > hb) return 1
-  return 0
+  var ha = hash(typeof a === 'string' ? a : a.key).join('')
+  var hb = hash(typeof b === 'string' ? b : b.key).join('')
+  return ha.localeCompare(hb)
 }
 
 const cases = {
@@ -26,6 +24,40 @@ Object.keys(cases).forEach((key) => {
       cb => testTwoFeedsWithKeys(t, keysToTest, cb),
       cb => t.end()
     )
+  })
+})
+
+tape('fully visit a folder before visiting the next one', function (t) {
+  t.plan(12)
+  var db = create.one()
+  put(db, ['a', 'a/b', 'a/b/c', 'b/c', 'b/c/d'], function (err) {
+    t.error(err, 'no error')
+    var ite = db.iterator()
+
+    ite.next(function loop (err, val) {
+      t.error(err, 'no error')
+      if (!val) return t.end()
+
+      if (val.key[0] === 'b') {
+        t.same(val.key, 'b/c')
+        ite.next(function (err, val) {
+          t.error(err, 'no error')
+          t.same(val.key, 'b/c/d')
+          ite.next(loop)
+        })
+      } else {
+        t.same(val.key, 'a')
+        ite.next(function (err, val) {
+          t.error(err, 'no error')
+          t.same(val.key, 'a/b')
+          ite.next(function (err, val) {
+            t.error(err, 'no error')
+            t.same(val.key, 'a/b/c')
+            ite.next(loop)
+          })
+        })
+      }
+    })
   })
 })
 
