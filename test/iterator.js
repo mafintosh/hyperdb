@@ -108,6 +108,21 @@ tape('non recursive iteration', function (t) {
   })
 })
 
+tape('mixed nested and non nexted iteration', function (t) {
+  var db = create.one()
+  var vals = ['a', 'a/a', 'a/b', 'a/c', 'a/a/a', 'a/a/b', 'a/a/c']
+  var expected = toMap(vals)
+
+  put(db, vals, function (err) {
+    t.error(err, 'no error')
+    all(db.iterator(), function (err, map) {
+      t.error(err, 'no error')
+      t.same(map, expected, 'iterated all values')
+      t.end()
+    })
+  })
+})
+
 tape('two writers, one fork', function (t) {
   create.two(function (db1, db2, replicate) {
     run(
