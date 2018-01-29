@@ -11,6 +11,7 @@
   "dependencies": {
     "hypercore": "^6.10.1",
     "inherits": "^2.0.3",
+    "mutexify": "^1.2.0",
     "nanoiterator": "^1.0.0",
     "random-access-memory": "^2.4.0",
     "sodium-universal": "^2.0.0",

@@ -1,4 +1,5 @@
 var toStream = require('nanoiterator/to-stream')
+var mutexify = require('mutexify')
 var hash = require('./lib/hash')
 var iterator = require('./lib/iterator')
 var differ = require('./lib/differ')
@@ -16,6 +17,7 @@ function DB (opts) {
   this._map = opts.map || null
   this._reduce = opts.reduce || null
   this._snapshot = false
+  this._lock = mutexify()
 }
 
 DB.prototype.snapshot = function () {
@@ -25,7 +27,7 @@ DB.prototype.snapshot = function () {
   return snapshot
 }
 
-DB.prototype.heads = function () {
+DB.prototype.heads = function (cb) {
   var heads = []
   var i, j
 
@@ -48,7 +50,7 @@ DB.prototype.heads = function () {
     }
   }
 
-  return heads.filter(x => x)
+  process.nextTick(cb, null, heads.filter(x => x))
 }
 
 DB.prototype.put = function (key, val, cb) {
@@ -57,7 +59,23 @@ DB.prototype.put = function (key, val, cb) {
     return process.nextTick(cb, new Error('Cannot put on a snapshot'))
   }
 
+  var self = this
+
   key = normalizeKey(key)
+
+  this._lock(function (release) {
+    self.heads(function (err, heads) {
+      if (err) return unlock(err)
+      self._put(key, val, heads, unlock)
+    })
+
+    function unlock (err) {
+      release(cb, err)
+    }
+  })
+}
+
+DB.prototype._put = function (key, val, heads, cb) {
   var path = hash(key, true)
   var writable = this._feeds[this._id]
   var clock = []
@@ -69,7 +87,6 @@ DB.prototype.put = function (key, val, cb) {
 
   if (!writable) writable = this._feeds[this._id] = []
 
-  var heads = this.heads()
   var node = {
     path: path,
     feed: this._id,
@@ -87,7 +104,7 @@ DB.prototype.put = function (key, val, cb) {
   }
 
   for (var j = 0; j < heads.length; j++) {
-    this._put(node, 0, heads[j])
+    this._putFromHead(node, 0, heads[j])
   }
 
   writable.push(node)
@@ -98,7 +115,7 @@ function inspect () {
   return `Node(key=${this.key}, value=${this.value}, seq=${this.seq}, feed=${this.feed})`
 }
 
-DB.prototype._put = function (node, i, head) {
+DB.prototype._putFromHead = function (node, i, head) {
   // TODO: when there is a fork, this will visit the same nodes more than once
   // which isn't a big deal, but unneeded - can be optimised away in the future
 
@@ -165,7 +182,7 @@ DB.prototype._put = function (node, i, head) {
 
       if (remoteValues.length > 1) { // more than one - fork out
         for (var l = 0; l < remoteValues.length; l++) {
-          this._put(node, i + 1, this._feeds[remoteValues[l].feed][remoteValues[l].seq])
+          this._putFromHead(node, i + 1, this._feeds[remoteValues[l].feed][remoteValues[l].seq])
         }
         return
       }
@@ -201,16 +218,20 @@ DB.prototype.get = function (key, opts, cb) {
 DB.prototype._getNodes = function (key, opts, cb) {
   key = normalizeKey(key)
 
+  var self = this
   var results = []
-  var heads = this.heads()
 
-  var locks = getLocks(heads, this._feeds.length)
+  this.heads(function (err, heads) {
+    if (err) return cb(err)
 
-  for (var i = 0; i < heads.length; i++) {
-    this._getNodesFromHead(key, opts, 0, heads[i], results, heads[i], locks)
-  }
+    var locks = getLocks(heads, self._feeds.length)
 
-  process.nextTick(cb, null, results)
+    for (var i = 0; i < heads.length; i++) {
+      self._getNodesFromHead(key, opts, 0, heads[i], results, heads[i], locks)
+    }
+
+    process.nextTick(cb, null, results)
+  })
 }
 
 DB.prototype._getForks = function (key, opts, i, ptrs, results, lock, locks) {
