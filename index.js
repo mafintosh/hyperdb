@@ -4,6 +4,7 @@ var hash = require('./lib/hash')
 var iterator = require('./lib/iterator')
 var differ = require('./lib/differ')
 var changes = require('./lib/changes')
+var get = require('./lib/get')
 
 module.exports = DB
 
@@ -205,100 +206,46 @@ DB.prototype.get = function (key, opts, cb) {
   if (typeof opts === 'function') return this.get(key, null, opts)
 
   var self = this
-  this._getNodes(key, opts, onnodes)
-
-  function onnodes (err, results) {
-    if (err) return cb(err)
-    if (self._map) results = results.map(self._map)
-    if (self._reduce) results = results.length ? results.reduce(self._reduce) : null
-    cb(null, results)
-  }
-}
-
-DB.prototype._getNodes = function (key, opts, cb) {
-  key = normalizeKey(key)
-
-  var self = this
-  var results = []
 
   this.heads(function (err, heads) {
     if (err) return cb(err)
-
-    var locks = getLocks(heads, self._feeds.length)
-
-    for (var i = 0; i < heads.length; i++) {
-      self._getNodesFromHead(key, opts, 0, heads[i], results, heads[i], locks)
-    }
-
-    process.nextTick(cb, null, results)
+    get(self, heads, normalizeKey(key), opts, cb)
   })
 }
 
-DB.prototype._getForks = function (key, opts, i, ptrs, results, lock, locks) {
-  var nodes = getAllPtrs(this, ptrs)
-
-  for (var feedId = 0; feedId < locks.length; feedId++) {
-    var otherLock = locks[feedId]
-    if (otherLock !== lock) continue
-    locks[feedId] = getHighestClock(nodes, feedId)
-  }
-
-  for (var j = 0; j < nodes.length; j++) {
-    this._getNodesFromHead(key, opts, i + 1, nodes[j], results, nodes[j], locks)
-  }
-}
-
-DB.prototype._getNodesFromHead = function (key, opts, i, head, results, lock, locks) {
-  var prefixed = !!(opts && opts.prefix)
-
-  // If no head -> 404
-  if (!head) return
-
-  // Do not terminate the hash if it is a prefix search
-  var path = hash(key, !prefixed)
-
-  // We want to find the key closest to our path.
-  // At max, we need to go through path.length iterations
-  for (; i < path.length; i++) {
-    var val = path[i]
-    if (head.path[i] === val) continue
-
-    // We need a closer node. See if the trie has one that
-    // matches the path value
-    var remoteBucket = head.trie[i] || []
-    var remoteValues = remoteBucket[val] || []
-
-    // No closer ones -> 404
-    if (!remoteValues.length) return
-
-    // More than one reference -> We have forks.
-    if (remoteValues.length > 1) {
-      this._getForks(key, opts, i, remoteValues, results, lock, locks)
-      return
-    }
-
-    // Recursive from a closer node
-    head = getPtr(this, remoteValues[0])
-    if (locks[head.feed] !== lock) return
-  }
-
-  pushResult(prefixed, results, key, head)
-
-  // check if we had a collision, or similar (our last bucket contains more stuff)
-
-  var last = head.trie[path.length - 1]
-  var lastValues = last && last[path[path.length - 1]]
-  if (!lastValues) return
-
-  for (var j = 0; j < lastValues.length; j++) {
-    var lastVal = getPtr(this, lastValues[j])
-    if (locks[val.feed] !== lock) continue
-    pushResult(prefixed, results, key, lastVal)
-  }
-}
-
+// Used by ./lib/*
 DB.prototype._getPointer = function (feed, seq, cb) {
   process.nextTick(cb, null, this._feeds[feed][seq])
+}
+
+// Used by ./lib/*
+DB.prototype._getAllPointers = function (ptrs, cb) {
+  var results = new Array(ptrs.length)
+  var error = null
+  var missing = results.length
+
+  if (!missing) return process.nextTick(cb, null, results)
+
+  for (var i = 0; i < ptrs.length; i++) {
+    var ptr = ptrs[i]
+    this._getPointer(ptr.feed, ptr.seq, onnode)
+  }
+
+  function onnode (err, node) {
+    if (err) error = err
+    else results[indexOf(ptrs, node)] = node
+    if (--missing) return
+    if (error) cb(error, null)
+    else cb(null, results)
+  }
+}
+
+function indexOf (ptrs, ptr) {
+  for (var i = 0; i < ptrs.length; i++) {
+    var p = ptrs[i]
+    if (ptr.feed === p.feed && ptr.seq === p.seq) return i
+  }
+  return -1
 }
 
 DB.prototype.list = function (prefix, opts, cb) {
@@ -355,62 +302,9 @@ function isOptions (opts) {
   return typeof opts === 'object' && !!opts
 }
 
-function isPrefix (key, prefix) {
-  if (prefix.length && prefix[0] === '/') prefix = prefix.slice(1)
-  return key.slice(0, prefix.length) === prefix
-}
-
 function normalizeKey (key) {
   if (!key.length) return ''
   return key[0] === '/' ? key.slice(1) : key
 }
 
 function noop () {}
-
-function getAllPtrs (self, ptrs) {
-  return ptrs.map(x => getPtr(self, x))
-}
-
-function getPtr (self, ptr) {
-  return self._feeds[ptr.feed][ptr.seq]
-}
-
-function pushResult (prefixed, results, key, head) {
-  if (prefixed && isPrefix(head.key, key)) return push(results, head)
-  if (head.key === key) return push(results, head)
-}
-
-function push (results, node) {
-  results.push(node)
-}
-
-function getLocks (nodes, feedCount) {
-  var locks = new Array(feedCount)
-  for (var feedId = 0; feedId < feedCount; feedId++) {
-    locks[feedId] = getHighestClock(nodes, feedId)
-  }
-  return locks
-}
-
-function getHighestClock (nodes, feedId) {
-  var highest = null
-
-  for (var i = 0; i < nodes.length; i++) {
-    var node = nodes[i]
-
-    if (!highest) {
-      highest = node
-      continue
-    }
-
-    var hclock = highest.clock
-    var nclock = node.clock
-
-    if (nclock.length <= feedId) continue
-    if (hclock.length <= feedId || nclock[feedId] > hclock[feedId]) {
-      highest = node
-    }
-  }
-
-  return highest
-}
