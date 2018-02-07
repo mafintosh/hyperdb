@@ -96,7 +96,7 @@ DB.prototype.batch = function (batch, cb) {
     }
 
     function done (err) {
-      release(cb, err)
+      release(cb, err, nodes)
     }
   })
 }
@@ -315,8 +315,8 @@ DB.prototype.put = function (key, value, cb) {
   var self = this
 
   this._lock(function (release) {
-    self._put(key, value, null, function (err) {
-      release(cb, err)
+    self._put(key, value, null, function (err, node) {
+      release(cb, err, node)
     })
   })
 }

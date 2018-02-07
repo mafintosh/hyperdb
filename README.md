@@ -76,6 +76,9 @@ Checkout the db at an older version. The checkout is a DB instance as well.
 
 Insert a new value. Will merge any previous values seen for this key.
 
+`callback`'s parameters are `err, node`, where `node` is the newly inserted
+node for this key.
+
 #### `db.batch(batch, [callback])`
 
 Insert a batch of values efficiently, in a single atomic transaction. A batch should be an array of objects that look like this:
@@ -87,6 +90,9 @@ Insert a batch of values efficiently, in a single atomic transaction. A batch sh
   value: someValue
 }
 ```
+
+`callback`'s parameters are `err, nodes`, where `nodes` is an array of the
+batched nodes.
 
 #### `var stream = db.createWriteStream()`
 
