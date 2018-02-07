@@ -12,7 +12,7 @@
     "inherits": "^2.0.3",
     "mutexify": "^1.1.0",
     "once": "^1.4.0",
-    "protocol-buffers": "^3.2.1",
+    "protocol-buffers": "^4.0.2",
     "random-access-file": "^1.8.1",
     "sodium-universal": "^1.4.0",
     "thunky": "^1.0.2",
