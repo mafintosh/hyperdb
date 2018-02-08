@@ -1063,16 +1063,30 @@ DB.prototype.createHistoryStream = function (opts) {
   function onWriter (writer) {
     self.removeListener('append', onAppend)
     self.removeListener('_writer', onWriter)
+
+    var pending = 2
+    var hadAppend = false
+    var noNode = false
+    self.once('append', function (feed) {
+      hadAppend = feed
+      if (!--pending) done()
+    })
     writer.head(function (node) {
       if (node) {
         nodes[writer.id] = node
         seqs[writer.id] = node.seq
         resumeTraversal()
       } else {
-        self.once('_writer', onWriter)
-        self.once('append', onAppend)
+        noNode = true
       }
+      if (!--pending) done()
     })
+
+    function done () {
+      self.once('_writer', onWriter)
+      self.once('append', onAppend)
+      if (hadAppend && noNode) onAppend(hadAppend)
+    }
   }
 
   function onAppend (feed) {

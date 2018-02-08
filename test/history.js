@@ -484,6 +484,21 @@ tape('2 feeds: live + 3rd feed added', function (t) {
   })
 })
 
+tape('start live history stream on auth\'d feed before put', function (t) {
+  t.plan(1)
+
+  create.two(function (a, b) {
+    var rs = b.createHistoryStream({start: undefined, live: true})
+    var expected = 1
+    rs.on('data', function (node) {
+      if (--expected < 0) t.fail()
+      else t.equals(node.feed + ',' + node.seq, '1,0')
+    })
+
+    b.put('/b', '12')
+  })
+})
+
 function collect (stream, cb) {
   var res = []
   stream.on('data', res.push.bind(res))
