@@ -15,6 +15,16 @@ tape('basic put/get', function (t) {
   })
 })
 
+tape('get on empty db', function (t) {
+  var db = create.one()
+
+  db.get('hello', function (err, node) {
+    t.error(err, 'no error')
+    t.same(node, null, 'node is not found')
+    t.end()
+  })
+})
+
 tape('not found', function (t) {
   var db = create.one()
   db.put('hello', 'world', function (err) {
