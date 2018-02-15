@@ -426,7 +426,7 @@ tape('two writers, simple fork', function (t) {
       db2.get('0', on0)
       db2.get('1', on1)
       db2.get('2', on2db2)
-     }
+    }
 
     function on0 (err, nodes) {
       t.error(err, 'no error')
@@ -458,7 +458,6 @@ tape('two writers, simple fork', function (t) {
     }
   })
 })
-
 
 /*
 tape('batch', function (t) {

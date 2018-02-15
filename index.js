@@ -113,7 +113,7 @@ DB.prototype._put = function (key, val, heads, cb) {
 }
 
 function inspect () {
-  return `Node(key=${this.key}, value=${this.value}, seq=${this.seq}, feed=${this.feed})`
+  return `Node(key=${this.key}, value=${this.value}, seq=${this.seq}, feed=${this.feed}, clock=${this.clock}, path=${this.path.join('')})`
 }
 
 DB.prototype._putFromHead = function (node, i, head) {
