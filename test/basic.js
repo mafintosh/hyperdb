@@ -1,6 +1,7 @@
 var tape = require('tape')
 var create = require('./helpers/create')
 var run = require('./helpers/run')
+var replicate = require('./helpers/replicate')
 
 tape('basic put/get', function (t) {
   var db = create.one()
@@ -344,6 +345,120 @@ tape('two writers, one conflict', function (t) {
     }
   })
 })
+
+tape('two writers, fork', function (t) {
+  t.plan(4 * 2 + 1)
+
+  create.two(function (a, b, replicate) {
+    run(
+      cb => a.put('a', 'a', cb),
+      replicate,
+      cb => b.put('a', 'b', cb),
+      cb => a.put('b', 'c', cb),
+      replicate,
+      done
+    )
+
+    function done (err) {
+      t.error(err, 'no error')
+      a.get('a', ona)
+      b.get('a', ona)
+    }
+
+    function ona (err, nodes) {
+      t.error(err, 'no error')
+      t.same(nodes.length, 1)
+      t.same(nodes[0].key, 'a')
+      t.same(nodes[0].value, 'b')
+    }
+  })
+})
+
+tape('three writers, two forks', function (t) {
+  t.plan(4 * 3 + 1)
+
+  create.three(function (a, b, c, replicateAll) {
+    run(
+      cb => a.put('a', 'a', cb),
+      replicateAll,
+      cb => b.put('a', 'ab', cb),
+      cb => a.put('some', 'some', cb),
+      cb => replicate(a, c, cb),
+      cb => c.put('c', 'c', cb),
+      replicateAll,
+      done
+    )
+
+    function done (err) {
+      t.error(err, 'no error')
+      a.get('a', ona)
+      b.get('a', ona)
+      c.get('a', ona)
+
+      function ona (err, nodes) {
+        t.error(err, 'no error')
+        t.same(nodes.length, 1, 'one node')
+        t.same(nodes[0].key, 'a')
+        t.same(nodes[0].value, 'ab')
+      }
+    }
+  })
+})
+
+tape('two writers, simple fork', function (t) {
+  t.plan(1 + 2 * (4 + 6) + 2 + 4)
+  create.two(function (db1, db2, replicate) {
+    run(
+      cb => db1.put('0', '0', cb),
+      replicate,
+      cb => db1.put('1', '1a', cb),
+      cb => db2.put('1', '1b', cb),
+      replicate,
+      cb => db1.put('2', '2', cb),
+      done
+    )
+
+    function done (err) {
+      t.error(err, 'no error')
+      db1.get('0', on0)
+      db1.get('1', on1)
+      db1.get('2', on2db1)
+      db2.get('0', on0)
+      db2.get('1', on1)
+      db2.get('2', on2db2)
+     }
+
+    function on0 (err, nodes) {
+      t.error(err, 'no error')
+      t.same(nodes.length, 1)
+      t.same(nodes[0].key, '0')
+      t.same(nodes[0].value, '0')
+    }
+
+    function on1 (err, nodes) {
+      t.error(err, 'no error')
+      t.same(nodes.length, 2)
+      nodes.sort((a, b) => a.value.localeCompare(b.value))
+      t.same(nodes[0].key, '1')
+      t.same(nodes[0].value, '1a')
+      t.same(nodes[1].key, '1')
+      t.same(nodes[1].value, '1b')
+    }
+
+    function on2db1 (err, nodes) {
+      t.error(err, 'no error')
+      t.same(nodes.length, 1)
+      t.same(nodes[0].key, '2')
+      t.same(nodes[0].value, '2')
+    }
+
+    function on2db2 (err, nodes) {
+      t.error(err, 'no error')
+      t.same(nodes.length, 0)
+    }
+  })
+})
+
 
 /*
 tape('batch', function (t) {
