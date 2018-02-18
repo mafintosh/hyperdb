@@ -373,7 +373,7 @@ function all (ite, cb) {
     if (!node) return cb(null, vals)
     var key = Array.isArray(node) ? node[0].key : node.key
     if (vals[key]) return cb(new Error('duplicate node for ' + key))
-    vals[key] = Array.isArray(node) ? node.map(n => n.value) : node.value
+    vals[key] = Array.isArray(node) ? node.map(n => n.value).sort() : node.value
     ite.next(loop)
   })
 }
