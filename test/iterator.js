@@ -181,7 +181,6 @@ tape('two writers, one fork', function (t) {
 
     function done (err) {
       t.error(err, 'no error')
-
       all(db1.iterator(), function (err, vals) {
         t.error(err, 'no error')
         t.same(vals, {
