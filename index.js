@@ -30,28 +30,30 @@ DB.prototype.snapshot = function () {
 
 DB.prototype.heads = function (cb) {
   var heads = []
-  var i, j
+  var actual = []
+  var i
 
   for (i = 0; i < this._feeds.length; i++) {
     if (this._feeds[i] && this._feeds[i].length) {
       heads.push(this._feeds[i][this._feeds[i].length - 1])
     }
   }
-
   // TODO: this could prob be done in O(heads) instead of O(heads^2)
   for (i = 0; i < heads.length; i++) {
-    var h = heads[i]
-    if (!h) continue
-
-    for (j = 0; j < h.clock.length; j++) {
-      var c = h.clock[j]
-      if (heads[j] && heads[j].seq < c && j !== h.feed) {
-        heads[j] = null
-      }
-    }
+    if (isHead(heads[i], heads)) actual.push(heads[i])
   }
 
-  process.nextTick(cb, null, heads.filter(x => x))
+  process.nextTick(cb, null, actual)
+
+  function isHead (node, list) {
+    var clock = node.seq + 1
+    for (var i = 0; i < list.length; i++) {
+      var other = list[i]
+      if (other === node) continue
+      if (other.clock[node.feed] >= clock) return false
+    }
+    return true
+  }
 }
 
 DB.prototype.put = function (key, val, cb) {

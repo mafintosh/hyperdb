@@ -459,6 +459,43 @@ tape('two writers, simple fork', function (t) {
   })
 })
 
+tape('three writers, no conflicts, forks', function (t) {
+  t.plan(1 + 4 * 3)
+
+  create.three(function (a, b, c, replicateAll) {
+    run(
+      cb => c.put('a', 'ac', cb),
+      replicateAll,
+      cb => a.put('foo', 'bar', cb),
+      replicateAll,
+      cb => a.put('a', 'aa', cb),
+      cb => replicate(a, b, cb),
+      range(50).map(key => cb => b.put(key, key, cb)),
+      replicateAll,
+      range(5).map(key => cb => c.put(key, 'c' + key, cb)),
+      done
+    )
+
+    function done (err) {
+      t.error(err, 'no error')
+      a.get('a', ona)
+      b.get('a', ona)
+      c.get('a', ona)
+    }
+
+    function ona (err, nodes) {
+      t.error(err, 'no error')
+      t.same(nodes.length, 1)
+      t.same(nodes[0].key, 'a')
+      t.same(nodes[0].value, 'aa')
+    }
+  })
+})
+
+function range (n) {
+  return Array(n).join(',').split(',').map((_, i) => '' + i)
+}
+
 /*
 tape('batch', function (t) {
   t.plan(17)
