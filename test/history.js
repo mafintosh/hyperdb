@@ -499,6 +499,32 @@ tape('start live history stream on auth\'d feed before put', function (t) {
   })
 })
 
+tape('race condition regression test', function (t) {
+  var entries = []
+  create.three(function (a, b, c) {
+    var hs = c.createHistoryStream({live: true})
+    hs.on('data', d => {
+      entries[d.feed] = (entries[d.feed] || 0) + 1
+    })
+    a.put('/test', 'test', function () {
+      a.put('/Test', 'test', function () {
+        a.put('/TEst', 'test', function () {
+          a.put('/TESt', 'test', function () {
+            replicate(a, b, function () {
+              replicate(a, c, function () {
+                t.equals(entries.length, 2)
+                t.equals(entries[0], 5)
+                t.equals(entries[1], 1)
+                t.end()
+              })
+            })
+          })
+        })
+      })
+    })
+  })
+})
+
 function collect (stream, cb) {
   var res = []
   stream.on('data', res.push.bind(res))

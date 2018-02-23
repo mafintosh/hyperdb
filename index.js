@@ -970,6 +970,8 @@ DB.prototype.createHistoryStream = function (opts) {
   var seqs = []
   var atFront = false  // whether the live stream has reached real-time
 
+  this.on('append', onAppend)
+
   // Populate 'nodes' and 'seq' with first entry in each writer
   initTraversal(function (err, theNodes, theSeqs) {
     if (err) return cb(err)
@@ -998,8 +1000,6 @@ DB.prototype.createHistoryStream = function (opts) {
 
       // Stop traversal; set up event listeners; wait
       atFront = true
-      self.once('_writer', onWriter)
-      self.once('append', onAppend)
       return
     }
 
@@ -1060,38 +1060,7 @@ DB.prototype.createHistoryStream = function (opts) {
     traverseNode()
   }
 
-  function onWriter (writer) {
-    self.removeListener('append', onAppend)
-    self.removeListener('_writer', onWriter)
-
-    var pending = 2
-    var hadAppend = false
-    var noNode = false
-    self.once('append', function (feed) {
-      hadAppend = feed
-      if (!--pending) done()
-    })
-    writer.head(function (node) {
-      if (node) {
-        nodes[writer.id] = node
-        seqs[writer.id] = node.seq
-        resumeTraversal()
-      } else {
-        noNode = true
-      }
-      if (!--pending) done()
-    })
-
-    function done () {
-      self.once('_writer', onWriter)
-      self.once('append', onAppend)
-      if (hadAppend && noNode) onAppend(hadAppend)
-    }
-  }
-
   function onAppend (feed) {
-    self.removeListener('append', onAppend)
-    self.removeListener('_writer', onWriter)
     for (var i = 0; i < self._writers.length; i++) {
       var writer = self._writers[i]
       if (writer.key.equals(feed.key)) {
@@ -1101,14 +1070,12 @@ DB.prototype.createHistoryStream = function (opts) {
             if (err) return cb(err)
             nodes[n] = latest
             seqs[n] = latest.seq
-            resumeTraversal()
+            if (atFront) resumeTraversal()
           })
         })(i)
         return
       }
     }
-    self.once('_writer', onWriter)
-    self.once('append', onAppend)
   }
 
   return stream
