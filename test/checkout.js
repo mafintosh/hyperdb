@@ -46,10 +46,10 @@ tape('checkout gets should pass for all keys inserted before checkout seq', func
       var db2 = db1.checkout(version)
       db2.get('a', function (err, nodes) {
         t.error(err)
-        t.same(nodes[0].value, 'b') // This passes.
+        t.same(nodes[0].value, 'b')
         db2.get('c', function (err, nodes) {
           t.error(err)
-          t.same(nodes[0].value, 'd') // This fails.
+          t.same(nodes[0].value, 'd')
         })
       })
     })
