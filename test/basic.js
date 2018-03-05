@@ -314,7 +314,7 @@ tape('createWriteStream', function (t) {
   }
 })
 
-tape.only('createWriteStream pipe', function (t) {
+tape('createWriteStream pipe', function (t) {
   t.plan(10)
   var db = create.one()
   var writer = db.createWriteStream()
@@ -322,7 +322,6 @@ tape.only('createWriteStream pipe', function (t) {
   var reader = new Readable({
     objectMode: true,
     read: function (size) {
-      console.log('index', index)
       var value = (index < 1000) ? {
         type: 'put',
         key: 'foo' + index,
