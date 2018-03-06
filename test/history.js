@@ -525,6 +525,33 @@ tape('race condition regression test', function (t) {
   })
 })
 
+tape('2-peer live replication + live history', function (t) {
+  t.plan(5)
+
+  create.two(function (db1, db2) {
+    var rep1 = db1.replicate({ live: true })
+    var rep2 = db2.replicate({ live: true })
+    rep2.pipe(rep1).pipe(rep2)
+
+    var seen = 0
+
+    var historyStream = db1.createHistoryStream({ live: true })
+    historyStream.on('data', function (node) {
+      seen++
+      if (seen === 1) t.equals(node.key, '')
+      if (seen === 2) t.equals(node.key, '/hey')
+      if (seen === 3) t.equals(node.key, '/dog')
+      if (seen === 4) t.equals(node.key, '/yo')
+      if (seen === 5) t.equals(node.key, '/thing')
+    })
+
+    db1.put('/hey', 'there')
+    db2.put('/yo', 'there')
+    db1.put('/dog', 'dog')
+    db2.put('/thing', 'thing')
+  })
+})
+
 function collect (stream, cb) {
   var res = []
   stream.on('data', res.push.bind(res))
