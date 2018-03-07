@@ -425,8 +425,10 @@ DB.prototype._get = function (key, wait, result, visit, cb) {
     var missing = heads.length
     var error = null
 
+    var headsCopy = heads.slice()
+
     for (var i = 0; i < heads.length; i++) {
-      self._visitGet(key, path, 0, heads[i], heads, result, visit, onget)
+      self._visitGet(key, path, 0, heads[i], headsCopy, result, visit, onget)
     }
 
     function onget (err) {

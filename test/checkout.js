@@ -27,3 +27,31 @@ tape('basic checkout', function (t) {
     })
   })
 })
+
+tape('checkout gets should pass for all keys inserted before checkout seq', function (t) {
+  t.plan(7)
+
+  var db1 = create.one()
+  db1.put('a', 'b', function (err) {
+    t.error(err)
+    db1.put('c', 'd', function (err) {
+      t.error(err)
+      checkoutAndTest()
+    })
+  })
+
+  function checkoutAndTest () {
+    db1.version(function (err, version) {
+      t.error(err)
+      var db2 = db1.checkout(version)
+      db2.get('a', function (err, nodes) {
+        t.error(err)
+        t.same(nodes[0].value, 'b')
+        db2.get('c', function (err, nodes) {
+          t.error(err)
+          t.same(nodes[0].value, 'd')
+        })
+      })
+    })
+  }
+})
