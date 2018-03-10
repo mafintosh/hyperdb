@@ -1,7 +1,5 @@
 var tape = require('tape')
 var create = require('./helpers/create')
-var run = require('./helpers/run')
-var replicate = require('./helpers/replicate')
 
 tape('basic put/get', function (t) {
   var db = create.one()
@@ -254,6 +252,27 @@ tape('race works', function (t) {
       t.same(node.value, val, 'same value')
     })
   }
+})
+
+tape('version', function (t) {
+  var db = create.one()
+
+  db.version(function (err, version) {
+    t.error(err, 'no error')
+    t.same(version, Buffer.alloc(0))
+    db.put('hello', 'world', function () {
+      db.version(function (err, version) {
+        t.error(err, 'no error')
+        db.put('hello', 'verden', function () {
+          db.checkout(version).get('hello', function (err, node) {
+            t.error(err, 'no error')
+            t.same(node.value, 'world')
+            t.end()
+          })
+        })
+      })
+    })
+  })
 })
 
 /*

@@ -1,5 +1,12 @@
-module.exports = function (a, b, cb) {
-  if (b._feeds[b._id]) a._feeds[b._id] = b._feeds[b._id].slice(0)
-  if (a._feeds[a._id]) b._feeds[a._id] = a._feeds[a._id].slice(0)
-  process.nextTick(cb)
+module.exports = replicate
+
+function replicate (a, b, opts, cb) {
+  if (typeof opts === 'function') return replicate(a, b, null, opts)
+
+  var s1 = a.replicate(opts)
+  var s2 = b.replicate(opts)
+
+  s1.pipe(s2).pipe(s1).on('end', function () {
+    cb()
+  })
 }

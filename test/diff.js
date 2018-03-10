@@ -237,7 +237,7 @@ tape('two feeds /w competing for a value', function (t) {
 tape('small diff on big db', function (t) {
   var db = create.one()
 
-  put(db, range(5000), function (err) {
+  put(db, range(1000), function (err) {
     t.error(err, 'no error')
     var snap = db.snapshot()
     db.put('42', '42*', function (err) {

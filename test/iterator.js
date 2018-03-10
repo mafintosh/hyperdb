@@ -21,7 +21,7 @@ tape('basic iteration', function (t) {
 tape('iterate a big db', function (t) {
   var db = create.one()
 
-  var vals = range(4000, '#')
+  var vals = range(1000, '#')
   var expected = toMap(vals)
 
   put(db, vals, function (err) {
@@ -69,10 +69,10 @@ tape('empty prefix iteration', function (t) {
 tape('prefix iterate a big db', function (t) {
   var db = create.one()
 
-  var vals = range(4000, 'foo/#')
+  var vals = range(1000, 'foo/#')
   var expected = toMap(vals)
 
-  vals = vals.concat(range(4000, '#'))
+  vals = vals.concat(range(1000, '#'))
 
   put(db, vals, function (err) {
     t.error(err, 'no error')
