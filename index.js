@@ -5,6 +5,9 @@ var remove = require('unordered-array-remove')
 var toStream = require('nanoiterator/to-stream')
 var varint = require('varint')
 var mutexify = require('mutexify')
+var raf = require('random-access-file')
+var path = require('path')
+var hash = require('./lib/hash')
 var iterator = require('./lib/iterator')
 var differ = require('./lib/differ')
 var changes = require('./lib/changes')
@@ -27,7 +30,7 @@ function HyperDB (storage, key, opts) {
   this.ready = thunky(this._ready.bind(this))
   this.opened = false
 
-  this._storage = storage
+  this._storage = createStorage(storage)
   this._writers = checkout ? checkout._writers : []
   this._replicating = []
   this._localWriter = null
@@ -491,7 +494,7 @@ Writer.prototype.get = function (seq, cb) {
 
     val = JSON.parse(val)
     val.seq = seq
-    val.path = require('./lib/hash')(val.key, true)
+    val.path = hash(val.key, true)
 
     if (self._feedsMessage && self._feedsLoaded === val.feeds) {
       self._maybeUpdateFeeds()
@@ -637,6 +640,13 @@ function isOptions (opts) {
 function normalizeKey (key) {
   if (!key.length) return ''
   return key[0] === '/' ? key.slice(1) : key
+}
+
+function createStorage (st) {
+  if (typeof st === 'function') return st
+  return function (name) {
+    return raf(path.join(st, name))
+  }
 }
 
 function noop () {}
