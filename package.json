@@ -10,12 +10,17 @@
   "license": "ISC",
   "dependencies": {
     "hypercore": "^6.10.1",
+    "hypercore-protocol": "^6.6.0",
     "inherits": "^2.0.3",
     "mutexify": "^1.2.0",
     "nanoiterator": "^1.0.0",
+    "random-access-file": "^2.0.1",
     "random-access-memory": "^2.4.0",
     "sodium-universal": "^2.0.0",
-    "to-buffer": "^1.1.0"
+    "thunky": "^1.0.2",
+    "to-buffer": "^1.1.0",
+    "unordered-array-remove": "^1.0.2",
+    "varint": "^5.0.0"
   },
   "devDependencies": {
     "standard": "^10.0.3",
