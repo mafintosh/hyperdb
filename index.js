@@ -7,23 +7,32 @@ var varint = require('varint')
 var mutexify = require('mutexify')
 var raf = require('random-access-file')
 var path = require('path')
+var util = require('util')
 var hash = require('./lib/hash')
 var iterator = require('./lib/iterator')
 var differ = require('./lib/differ')
 var changes = require('./lib/changes')
 var get = require('./lib/get')
 var put = require('./lib/put')
+var messages = require('./lib/messages')
+var trie = require('./lib/trie-encoding')
 
 module.exports = HyperDB
 
 function HyperDB (storage, key, opts) {
   if (!(this instanceof HyperDB)) return new HyperDB(storage, key, opts)
+
+  if (isOptions(key)) {
+    opts = key
+    key = null
+  }
+
   if (!opts) opts = {}
 
   var checkout = opts.checkout
 
-  this.key = key
-  this.discoveryKey = key ? hypercore.discoveryKey(key) : null
+  this.key = typeof key === 'string' ? Buffer.from(key, 'hex') : key
+  this.discoveryKey = this.key ? hypercore.discoveryKey(this.key) : null
   this.source = checkout ? checkout.source : null
   this.local = checkout ? checkout.local : null
   this.feeds = checkout ? checkout.feeds : []
@@ -432,41 +441,27 @@ function Writer (multi, feed) {
 Writer.prototype.append = function (entry, cb) {
   if (!this._clock) this._clock = this._feed.length
 
+  var enc = messages.Entry
   this._entry = this._clock++
 
-  if (this._needsWriters()) {
-    entry.writers = this._encodeWriters()
+  if (this._needsInflate()) {
+    enc = messages.InflatedEntry
+    entry.feeds = this._mapList(this._multi.feeds, this._encodeMap, null)
     this._feedsMessage = entry
     this._feedsLoaded = this._feeds = this._entry
     this._updateFeeds()
   }
 
   entry.clock = this._mapList(this._multi._clock(), this._encodeMap, 0)
-  entry.feeds = this._feeds
-  entry.trie = this._mapTrie(entry.trie, this._encodeMap)
+  entry.inflate = this._feeds
+  entry.trie = trie.encode(entry.trie, this._encodeMap)
 
-  this._feed.append(JSON.stringify(entry), cb)
+  this._feed.append(enc.encode(entry), cb)
 }
 
-Writer.prototype._mapTrie = function (trie, map) {
-  for (var i = 0; i < trie.length; i++) {
-    var bucket = trie[i]
-    if (!bucket) continue
-    for (var j = 0; j < bucket.length; j++) {
-      var vals = bucket[j]
-      if (!vals) continue
-      for (var k = 0; k < vals.length; k++) {
-        var v = vals[k]
-        if (v.feed < map.length) v.feed = map[v.feed]
-      }
-    }
-  }
-  return trie
-}
-
-Writer.prototype._needsWriters = function () {
-  var feeds = this._feedsMessage
-  return !feeds || feeds.writers.length !== this._multi.feeds.length
+Writer.prototype._needsInflate = function () {
+  var msg = this._feedsMessage
+  return !msg || msg.feeds.length !== this._multi.feeds.length
 }
 
 Writer.prototype._maybeUpdateFeeds = function () {
@@ -476,31 +471,23 @@ Writer.prototype._maybeUpdateFeeds = function () {
   this._updateFeeds()
 }
 
-Writer.prototype._encodeWriters = function () {
-  var writers = this._multi.feeds.map(function (feed) {
-    return {
-      key: feed.key.toString('hex')
-    }
-  })
-
-  return this._mapList(writers, this._encodeMap, null)
-}
-
 Writer.prototype.get = function (seq, cb) {
   var self = this
 
   this._feed.get(seq, function (err, val) {
     if (err) return cb(err)
 
-    val = JSON.parse(val)
+    val = messages.Entry.decode(val)
+    val[util.inspect.custom] = inspect
     val.seq = seq
     val.path = hash(val.key, true)
+    val.value = val.value && val.value.toString()
 
-    if (self._feedsMessage && self._feedsLoaded === val.feeds) {
+    if (self._feedsMessage && self._feedsLoaded === val.inflate) {
       self._maybeUpdateFeeds()
       val.feed = self._id
       val.clock = self._mapList(val.clock, self._decodeMap, 0)
-      val.trie = self._mapTrie(val.trie, self._decodeMap)
+      val.trie = trie.decode(val.trie, self._decodeMap)
       return cb(null, val, self._id)
     }
 
@@ -528,12 +515,12 @@ Writer.prototype._mapList = function (list, map, def) {
 Writer.prototype._loadFeeds = function (head, cb) {
   var self = this
 
-  if (head.writers) done(head)
-  else this._feed.get(head.feeds, onfeeds)
+  if (head.feeds) done(head)
+  else this._feed.get(head.inflate, onfeeds)
 
-  function onfeeds (err, msg) {
+  function onfeeds (err, buf) {
     if (err) return cb(err)
-    done(JSON.parse(msg))
+    done(messages.InflatedEntry.decode(buf))
   }
 
   function done (msg) {
@@ -548,12 +535,12 @@ Writer.prototype._loadFeeds = function (head, cb) {
 Writer.prototype._addWriters = function (head, cb) {
   var self = this
   var id = this._id
-  var writers = this._feedsMessage.writers || []
+  var writers = this._feedsMessage.feeds || []
   var missing = writers.length + 1
   var error = null
 
   for (var i = 0; i < writers.length; i++) {
-    this._multi._addWriter(Buffer.from(writers[i].key, 'hex'), done)
+    this._multi._addWriter(writers[i].key, done)
   }
 
   done(null)
@@ -565,13 +552,13 @@ Writer.prototype._addWriters = function (head, cb) {
     self._updateFeeds()
     head.feed = self._id
     head.clock = self._mapList(head.clock, self._decodeMap, 0)
-    head.trie = self._mapTrie(head.trie, self._decodeMap)
+    head.trie = trie.decode(head.trie, self._decodeMap)
     cb(null, head, id)
   }
 }
 
 Writer.prototype._updateFeeds = function () {
-  var writers = this._feedsMessage.writers || []
+  var writers = this._feedsMessage.feeds || []
   var map = new Map()
   var i
 
@@ -634,7 +621,7 @@ function indexOf (list, ptr) {
 }
 
 function isOptions (opts) {
-  return typeof opts === 'object' && !!opts
+  return typeof opts === 'object' && !!opts && !Buffer.isBuffer(opts)
 }
 
 function normalizeKey (key) {
@@ -650,3 +637,11 @@ function createStorage (st) {
 }
 
 function noop () {}
+
+function inspect () {
+  return `Node(key=${this.key}` +
+    `, value=${this.value}` +
+    `, seq=${this.seq}` +
+    `, feed=${this.feed})` +
+    `)`
+}
