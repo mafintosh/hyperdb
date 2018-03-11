@@ -69,9 +69,10 @@ HyperDB.prototype.put = function (key, val, cb) {
   key = normalizeKey(key)
 
   this._lock(function (release) {
+    var clock = self._clock()
     self.heads(function (err, heads) {
       if (err) return unlock(err)
-      put(self, heads, key, val, unlock)
+      put(self, clock, heads, key, val, unlock)
     })
 
     function unlock (err) {
@@ -181,8 +182,9 @@ HyperDB.prototype.replicate = function (opts) {
 
   var self = this
   var expectedFeeds = this._writers.length
+  var factor = opts.externalData ? 2 : 1
 
-  opts.expectedFeeds = expectedFeeds
+  opts.expectedFeeds = expectedFeeds * factor
   if (!opts.stream) opts.stream = protocol(opts)
   var stream = opts.stream
 
@@ -218,7 +220,7 @@ HyperDB.prototype.replicate = function (opts) {
   function prefinalize (cb) {
     self.heads(function (err) {
       if (err) return cb(err)
-      stream.expectedFeeds += (self._writers.length - expectedFeeds)
+      stream.expectedFeeds += factor * (self._writers.length - expectedFeeds)
       expectedFeeds = self._writers.length
       cb()
     })
@@ -446,6 +448,7 @@ Writer.prototype.append = function (entry, cb) {
 
   var enc = messages.Entry
   this._entry = this._clock++
+  entry.clock[this._id] = this._clock
 
   if (this._needsInflate()) {
     enc = messages.InflatedEntry
@@ -455,7 +458,7 @@ Writer.prototype.append = function (entry, cb) {
     this._updateFeeds()
   }
 
-  entry.clock = this._mapList(this._multi._clock(), this._encodeMap, 0)
+  entry.clock = this._mapList(entry.clock, this._encodeMap, 0)
   entry.inflate = this._feeds
   entry.trie = trie.encode(entry.trie, this._encodeMap)
   if (entry.value) entry.value = this._multi._valueEncoding.encode(entry.value)
