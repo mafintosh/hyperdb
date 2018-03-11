@@ -4,13 +4,13 @@ var replicate = require('./replicate')
 var reduce = (a, b) => a
 
 exports.one = function () {
-  return hyperdb(ram, null, {reduce})
+  return hyperdb(ram, null, {reduce, valueEncoding: 'utf-8'})
 }
 
 exports.two = function (cb) {
-  var a = hyperdb(ram)
+  var a = hyperdb(ram, {valueEncoding: 'utf-8'})
   a.ready(function () {
-    var b = hyperdb(ram, a.key)
+    var b = hyperdb(ram, a.key, {valueEncoding: 'utf-8'})
     b.ready(function () {
       a.authorize(b.local.key, function () {
         replicate(a, b, function () {
@@ -22,11 +22,11 @@ exports.two = function (cb) {
 }
 
 exports.three = function (cb) {
-  var a = hyperdb(ram)
+  var a = hyperdb(ram, {valueEncoding: 'utf-8'})
 
   a.ready(function () {
-    var b = hyperdb(ram, a.key)
-    var c = hyperdb(ram, a.key)
+    var b = hyperdb(ram, a.key, {valueEncoding: 'utf-8'})
+    var c = hyperdb(ram, a.key, {valueEncoding: 'utf-8'})
 
     b.ready(function () {
       c.ready(function () {
