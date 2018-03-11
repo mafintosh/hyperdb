@@ -87,6 +87,10 @@ HyperDB.prototype.put = function (key, val, cb) {
   })
 }
 
+HyperDB.prototype.del = function (key, cb) {
+  this.put(key, null, cb)
+}
+
 HyperDB.prototype.watch = function (key, cb) {
   if (typeof key === 'function') return this.watch('', key)
   return watch(this, normalizeKey(key), cb)
