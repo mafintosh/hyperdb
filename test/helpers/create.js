@@ -3,8 +3,8 @@ var ram = require('random-access-memory')
 var replicate = require('./replicate')
 var reduce = (a, b) => a
 
-exports.one = function () {
-  return hyperdb(ram, null, {reduce, valueEncoding: 'utf-8'})
+exports.one = function (key) {
+  return hyperdb(ram, key, {reduce, valueEncoding: 'utf-8'})
 }
 
 exports.two = function (cb) {

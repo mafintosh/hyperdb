@@ -7,6 +7,6 @@ function replicate (a, b, opts, cb) {
   var s2 = b.replicate(opts)
 
   s1.pipe(s2).pipe(s1).on('end', function () {
-    cb()
+    if (cb) cb()
   })
 }

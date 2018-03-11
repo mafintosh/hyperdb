@@ -17,6 +17,7 @@ var get = require('./lib/get')
 var put = require('./lib/put')
 var messages = require('./lib/messages')
 var trie = require('./lib/trie-encoding')
+var watch = require('./lib/watch')
 
 module.exports = HyperDB
 
@@ -43,6 +44,7 @@ function HyperDB (storage, key, opts) {
 
   this._storage = createStorage(storage)
   this._writers = checkout ? checkout._writers : []
+  this._watching = checkout ? checkout._watching : []
   this._replicating = []
   this._localWriter = null
   this._byKey = new Map()
@@ -79,6 +81,11 @@ HyperDB.prototype.put = function (key, val, cb) {
       release(cb, err)
     }
   })
+}
+
+HyperDB.prototype.watch = function (key, cb) {
+  if (typeof key === 'function') return this.watch('', key)
+  return watch(this, normalizeKey(key), cb)
 }
 
 HyperDB.prototype.get = function (key, opts, cb) {
@@ -268,11 +275,16 @@ HyperDB.prototype._writer = function (dir, key) {
   var feed = hypercore(storage, key)
 
   writer = new Writer(self, feed)
+  feed.on('append', onappend)
 
   if (key) addWriter(null)
   else feed.ready(addWriter)
 
   return writer
+
+  function onappend () {
+    for (var i = 0; i < self._watching.length; i++) self._watching[i]._kick()
+  }
 
   function addWriter (err) {
     if (!err) self._byKey.set(feed.key.toString('hex'), writer)
