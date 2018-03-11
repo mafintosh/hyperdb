@@ -9,6 +9,7 @@ var codecs = require('codecs')
 var raf = require('random-access-file')
 var path = require('path')
 var util = require('util')
+var events = require('events')
 var hash = require('./lib/hash')
 var iterator = require('./lib/iterator')
 var differ = require('./lib/differ')
@@ -23,6 +24,7 @@ module.exports = HyperDB
 
 function HyperDB (storage, key, opts) {
   if (!(this instanceof HyperDB)) return new HyperDB(storage, key, opts)
+  events.EventEmitter.call(this)
 
   if (isOptions(key)) {
     opts = key
@@ -58,6 +60,8 @@ function HyperDB (storage, key, opts) {
 
   this.ready()
 }
+
+util.inherits(HyperDB, events.EventEmitter)
 
 HyperDB.prototype.put = function (key, val, cb) {
   if (!cb) cb = noop
@@ -284,6 +288,7 @@ HyperDB.prototype._writer = function (dir, key) {
 
   function onappend () {
     for (var i = 0; i < self._watching.length; i++) self._watching[i]._kick()
+    self.emit('append', feed)
   }
 
   function addWriter (err) {
@@ -374,7 +379,7 @@ HyperDB.prototype._ready = function (cb) {
   if (!this.source) this.source = feed('source', this.key)
 
   this.source.ready(function (err) {
-    if (err) return cb(err)
+    if (err) return done(err)
     if (self.source.writable) self.local = self.source
     if (!self.local) self.local = feed('local')
 
@@ -382,17 +387,20 @@ HyperDB.prototype._ready = function (cb) {
     self.discoveryKey = self.source.discoveryKey
 
     self.local.ready(function (err) {
-      if (err) return cb(err)
+      if (err) return done(err)
 
       self._localWriter = self._writers[self.feeds.indexOf(self.local)]
       self.opened = true
 
-      self._localWriter.head(function (err) {
-        if (err) return cb(err)
-        cb(null)
-      })
+      self._localWriter.head(done)
     })
   })
+
+  function done (err) {
+    if (err) return cb(err)
+    self.emit('ready')
+    cb(null)
+  }
 
   function feed (dir, key) {
     var writer = self._writer(dir, key)
@@ -401,7 +409,7 @@ HyperDB.prototype._ready = function (cb) {
   }
 
   function onversion (err) {
-    if (err) return cb(err)
+    if (err) return done(err)
 
     var offset = 0
     var missing = 0
@@ -427,7 +435,7 @@ HyperDB.prototype._ready = function (cb) {
   }
 
   function oncheckout (err, heads) {
-    if (err) return cb(err)
+    if (err) return done(err)
 
     self.opened = true
     self.source = self._checkout.source
@@ -436,7 +444,7 @@ HyperDB.prototype._ready = function (cb) {
     self.discoveryKey = self._checkout.discoveryKey
     self._heads = heads
 
-    cb(null)
+    done(null)
   }
 }
 
