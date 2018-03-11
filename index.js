@@ -5,6 +5,7 @@ var remove = require('unordered-array-remove')
 var toStream = require('nanoiterator/to-stream')
 var varint = require('varint')
 var mutexify = require('mutexify')
+var codecs = require('codecs')
 var raf = require('random-access-file')
 var path = require('path')
 var util = require('util')
@@ -28,6 +29,7 @@ function HyperDB (storage, key, opts) {
   }
 
   if (!opts) opts = {}
+  if (opts.one) opts.reduce = reduceFirst
 
   var checkout = opts.checkout
 
@@ -50,6 +52,7 @@ function HyperDB (storage, key, opts) {
   this._lock = mutexify()
   this._map = opts.map || null
   this._reduce = opts.reduce || null
+  this._valueEncoding = codecs(opts.valueEncoding || 'binary')
 
   this.ready()
 }
@@ -455,6 +458,7 @@ Writer.prototype.append = function (entry, cb) {
   entry.clock = this._mapList(this._multi._clock(), this._encodeMap, 0)
   entry.inflate = this._feeds
   entry.trie = trie.encode(entry.trie, this._encodeMap)
+  if (entry.value) entry.value = this._multi._valueEncoding.encode(entry.value)
 
   this._feed.append(enc.encode(entry), cb)
 }
@@ -481,7 +485,7 @@ Writer.prototype.get = function (seq, cb) {
     val[util.inspect.custom] = inspect
     val.seq = seq
     val.path = hash(val.key, true)
-    val.value = val.value && val.value.toString()
+    val.value = val.value && self._multi._valueEncoding.decode(val.value)
 
     if (self._feedsMessage && self._feedsLoaded === val.inflate) {
       self._maybeUpdateFeeds()
@@ -634,6 +638,10 @@ function createStorage (st) {
   return function (name) {
     return raf(path.join(st, name))
   }
+}
+
+function reduceFirst (a, b) {
+  return a
 }
 
 function noop () {}
