@@ -20,6 +20,7 @@
   },
   "devDependencies": {
     "protocol-buffers": "^4.0.4",
+    "random-access-memory": "^2.4.0",
     "standard": "^11.0.0",
     "stream-collector": "^1.0.1",
     "tape": "^4.9.0"

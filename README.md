@@ -86,29 +86,6 @@ Insert a new value. Will merge any previous values seen for this key.
 `callback`'s parameters are `err, node`, where `node` is the newly inserted
 node for this key.
 
-<!--
-#### `db.batch(batch, [callback])`
-
-Insert a batch of values efficiently, in a single atomic transaction. A batch should be an array of objects that look like this:
-
-``` js
-{
-  type: 'put',
-  key: someKey,
-  value: someValue
-}
-```
-
-`callback`'s parameters are `err, nodes`, where `nodes` is an array of the
-batched nodes.
-
-#### `var stream = db.createWriteStream()`
-
-Create a writable stream.
-
-Where `stream.write(data)` accepts data as an object or an array of objects with the same form as `db.batch()`.
--->
-
 #### `db.get(key, callback)`
 
 Lookup a string `key`. Returns a nodes array with the current values for this key.
