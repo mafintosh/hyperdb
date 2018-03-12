@@ -452,9 +452,9 @@ HyperDB.prototype._ready = function (cb) {
   }
 }
 
-function Writer (multi, feed) {
+function Writer (db, feed) {
   this._id = 0
-  this._multi = multi
+  this._db = db
   this._feed = feed
   this._feeds = 0
   this._feedsMessage = null
@@ -476,7 +476,7 @@ Writer.prototype.append = function (entry, cb) {
 
   if (this._needsInflate()) {
     enc = messages.InflatedEntry
-    entry.feeds = this._mapList(this._multi.feeds, this._encodeMap, null)
+    entry.feeds = this._mapList(this._db.feeds, this._encodeMap, null)
     this._feedsMessage = entry
     this._feedsLoaded = this._feeds = this._entry
     this._updateFeeds()
@@ -485,20 +485,20 @@ Writer.prototype.append = function (entry, cb) {
   entry.clock = this._mapList(entry.clock, this._encodeMap, 0)
   entry.inflate = this._feeds
   entry.trie = trie.encode(entry.trie, this._encodeMap)
-  if (entry.value) entry.value = this._multi._valueEncoding.encode(entry.value)
+  if (entry.value) entry.value = this._db._valueEncoding.encode(entry.value)
 
   this._feed.append(enc.encode(entry), cb)
 }
 
 Writer.prototype._needsInflate = function () {
   var msg = this._feedsMessage
-  return !msg || msg.feeds.length !== this._multi.feeds.length
+  return !msg || msg.feeds.length !== this._db.feeds.length
 }
 
 Writer.prototype._maybeUpdateFeeds = function () {
   if (!this._feedsMessage) return
-  if (this._decodeMap.length === this._multi.feeds.length) return
-  if (this._encodeMap.length === this._multi.feeds.length) return
+  if (this._decodeMap.length === this._db.feeds.length) return
+  if (this._encodeMap.length === this._db.feeds.length) return
   this._updateFeeds()
 }
 
@@ -512,7 +512,7 @@ Writer.prototype.get = function (seq, cb) {
     val[util.inspect.custom] = inspect
     val.seq = seq
     val.path = hash(val.key, true)
-    val.value = val.value && self._multi._valueEncoding.decode(val.value)
+    val.value = val.value && self._db._valueEncoding.decode(val.value)
 
     if (self._feedsMessage && self._feedsLoaded === val.inflate) {
       self._maybeUpdateFeeds()
@@ -571,7 +571,7 @@ Writer.prototype._addWriters = function (head, cb) {
   var error = null
 
   for (var i = 0; i < writers.length; i++) {
-    this._multi._addWriter(writers[i].key, done)
+    this._db._addWriter(writers[i].key, done)
   }
 
   done(null)
@@ -593,8 +593,8 @@ Writer.prototype._updateFeeds = function () {
   var map = new Map()
   var i
 
-  for (i = 0; i < this._multi.feeds.length; i++) {
-    map.set(this._multi.feeds[i].key.toString('hex'), i)
+  for (i = 0; i < this._db.feeds.length; i++) {
+    map.set(this._db.feeds[i].key.toString('hex'), i)
   }
 
   for (i = 0; i < writers.length; i++) {
