@@ -41,28 +41,35 @@ to operate on. There are many providers for the
 interface. e.g.
 
 ```js
-   var ram = require('random-access-memory')
-   var feed = hyperdb(function (filename) {
-     // filename will be one of: data, bitfield, tree, signatures, key, secret_key
-     // the data file will contain all your data concattenated.
+var ram = require('random-access-memory')
+var feed = hyperdb(function (filename) {
+  // filename will be one of: data, bitfield, tree, signatures, key, secret_key
+  // the data file will contain all your data concattenated.
 
-     // just store all files in ram by returning a random-access-memory instance
-     return ram()
-   })
+  // just store all files in ram by returning a random-access-memory instance
+  return ram()
+})
 ```
 
 `key` is a `Buffer` containing the local feed's public key. If you do not set
 this the public key will be loaded from storage. If no key exists a new key pair
 will be generated.
 
+Options include:
+
+```js
+{
+  map: node => mappedNode, // map nodes before returning them
+  reduce: (a, b) => someNode, // reduce the nodes array before returning it
+  one: false, // set to true to reduce the array to a single node
+  valueEncoding: 'binary' // set the value encoding of the db
+}
+```
+
 #### `db.on('ready')`
 
 Emitted exactly once: when the db is fully ready and all static properties have
 been set. You do not need to wait for this when calling any async functions.
-
-#### `db.on('error', err)`
-
-Emitted if there was a critical error before `db` is ready.
 
 #### `db.version(callback)`
 
@@ -78,27 +85,6 @@ Insert a new value. Will merge any previous values seen for this key.
 
 `callback`'s parameters are `err, node`, where `node` is the newly inserted
 node for this key.
-
-#### `db.batch(batch, [callback])`
-
-Insert a batch of values efficiently, in a single atomic transaction. A batch should be an array of objects that look like this:
-
-``` js
-{
-  type: 'put',
-  key: someKey,
-  value: someValue
-}
-```
-
-`callback`'s parameters are `err, nodes`, where `nodes` is an array of the
-batched nodes.
-
-#### `var stream = db.createWriteStream()`
-
-Create a writable stream.
-
-Where `stream.write(data)` accepts data as an object or an array of objects with the same form as `db.batch()`.
 
 #### `db.get(key, callback)`
 
@@ -123,51 +109,64 @@ myDb.on('ready', function () {
 })
 ```
 
-#### `unwatch = db.watch(folderOrKey, onchange)`
+#### `watcher = db.watch(folderOrKey, onchange)`
 
 Watch a folder and get notified anytime a key inside this folder
 has changed.
 
-``` js
-db.watch('/foo/bar', function () {
+```js
+db.watch('foo/bar', function () {
   console.log('folder has changed')
 })
 
 ...
 
-db.put('/foo/bar/baz', 'hi') // triggers the above
+db.put('foo/bar/baz', 'hi') // triggers the above
 ```
 
-#### `var stream = db.createDiffStream(key[, checkout][, head])`
+You can destroy the watcher by calling `watcher.destroy()`.
+
+The watcher will emit `watching` when it starts watching and `change`
+when a change has been detected.
+
+If a critical error occurs an error will be emitted on the watcher.
+
+#### `var stream = db.createReadStream(prefix[, options])`
+
+Create a readable stream of nodes stored in the database.
+Set `prefix` to only iterate nodes prefixed with that folder.
+
+Options include:
+
+```js
+{
+  recursive: true // visit all subfolders.
+                  // set to false to only visit the first node in each folder
+}
+```
+
+#### `db.list(prefix[, options], callback)`
+
+Same as `createReadStream` but buffers the result to a list that is passed to the
+callback.
+
+#### `var stream = db.createDiffStream(prefix[, checkout)`
 
 Find out about changes in key/value pairs between the version `checkout` and
-`head` for all keys prefixed by `key`.
-
-`checkout` and `head` are versions to use to compare against. If not provided,
-`head` is the current HEAD of the database, and `checkout` is the beginning of
-time.
+current version prefixed by `prefix`.
 
 `stream` is a readable object stream that outputs modifications like
 
 ```js
-{ type: 'del', name: '/a', nodes: [<node>] },
-{ type: 'put', name: '/a', nodes: [<node>, <node>] }
-{ type: 'put', name: '/b/beep', value: [<node>] }
+{ left: nodes, right: nodes }
 ```
 
-that occured between `checkout` and `head`. When multiple feeds conflict for the
-value of a key at a point in time, `nodes` will have multiple entries. `<node>`
-is the full hyperdb node.
+`left` are the nodes for a key found in the `db` and `right` are the nodes found in the `checkout`.
+If no nodes exist in the `db` for the key `left` will be `null` and vice versa.
 
-#### `var stream = db.createHistoryStream([opts, ][start])`
+#### `var stream = db.createHistoryStream()`
 
-Returns a readable stream of node objects covering all historic values since
-either the beginning of time, or the [version](#dbversioncallback) `opts.start`.
-
-Valid opts include:
-
-- `opts.start`: Use this version at the starting point for historic traversal.
-- `opts.live`: whether this is a live history stream. If so, the stream will never terminate on its own and will continue emitting nodes in real-time as they are added to the database.
+Returns a readable stream of node objects covering all historic values since the beginning of time
 
 Nodes are emitted in topographic order, meaning if value `v2` was aware of value
 `v1` at its insertion time, `v1` must be emitted before `v2`.

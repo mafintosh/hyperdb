@@ -1,24 +1,29 @@
-var hash = require('./lib/hash')
-var writer = require('./lib/writer')
 var hypercore = require('hypercore')
-var remove = require('unordered-array-remove')
-var raf = require('random-access-file')
-var mutexify = require('mutexify')
+var protocol = require('hypercore-protocol')
 var thunky = require('thunky')
-var codecs = require('codecs')
-var events = require('events')
-var inherits = require('inherits')
-var toBuffer = require('to-buffer')
+var remove = require('unordered-array-remove')
+var toStream = require('nanoiterator/to-stream')
 var varint = require('varint')
-var Readable = require('stream').Readable
-var bulk = require('bulk-write-stream')
-var once = require('once')
-var protocol = null // lazy load on replicate
+var mutexify = require('mutexify')
+var codecs = require('codecs')
+var raf = require('random-access-file')
+var path = require('path')
+var util = require('util')
+var events = require('events')
+var hash = require('./lib/hash')
+var iterator = require('./lib/iterator')
+var differ = require('./lib/differ')
+var changes = require('./lib/changes')
+var get = require('./lib/get')
+var put = require('./lib/put')
+var messages = require('./lib/messages')
+var trie = require('./lib/trie-encoding')
+var watch = require('./lib/watch')
 
-module.exports = DB
+module.exports = HyperDB
 
-function DB (storage, key, opts) {
-  if (!(this instanceof DB)) return new DB(storage, key, opts)
+function HyperDB (storage, key, opts) {
+  if (!(this instanceof HyperDB)) return new HyperDB(storage, key, opts)
   events.EventEmitter.call(this)
 
   if (isOptions(key)) {
@@ -27,662 +32,271 @@ function DB (storage, key, opts) {
   }
 
   if (!opts) opts = {}
+  if (opts.one) opts.reduce = reduceFirst
 
-  var self = this
+  var checkout = opts.checkout
 
-  this.key = key ? toBuffer(key, 'hex') : null
-  this.discoveryKey = null
-  this.local = null
-  this.source = null
+  this.key = typeof key === 'string' ? Buffer.from(key, 'hex') : key
+  this.discoveryKey = this.key ? hypercore.discoveryKey(this.key) : null
+  this.source = checkout ? checkout.source : null
+  this.local = checkout ? checkout.local : null
+  this.feeds = checkout ? checkout.feeds : []
+  this.ready = thunky(this._ready.bind(this))
   this.opened = false
-  this.sparse = !!opts.sparse
 
-  this._parent = opts.parent || null
-  this._checkout = opts.checkout || null
+  this._storage = createStorage(storage)
+  this._writers = checkout ? checkout._writers : []
+  this._watching = checkout ? checkout._watching : []
+  this._replicating = []
+  this._localWriter = null
+  this._byKey = new Map()
   this._heads = null
-  this._codec = opts.valueEncoding ? codecs(opts.valueEncoding) : null
-  this._storage = typeof storage === 'string' ? fileStorage : storage
+  this._version = opts.version || null
+  this._checkout = checkout || null
+  this._lock = mutexify()
   this._map = opts.map || null
   this._reduce = opts.reduce || null
-  this._writers = []
-  this._lock = mutexify() // unneeded once we support batching
-  this._localWriter = null
-  this._updates = 0
-  this.setMaxListeners(0) // use ._streams array instead
+  this._valueEncoding = codecs(opts.valueEncoding || 'binary')
 
-  this.ready = thunky(open)
-  this.ready(onready)
-
-  function onready (err) {
-    self.opened = !err
-    if (err) self.emit('error', err)
-    else self.emit('ready')
-  }
-
-  function open (cb) {
-    if (self._parent) return self._openCheckout(cb)
-    self._open(cb)
-  }
-
-  function fileStorage (name) {
-    return raf(name, {directory: storage})
-  }
+  this.ready()
 }
 
-inherits(DB, events.EventEmitter)
+util.inherits(HyperDB, events.EventEmitter)
 
-DB.prototype.batch = function (batch, cb) {
+HyperDB.prototype.put = function (key, val, cb) {
   if (!cb) cb = noop
-  if (!batch.length) return process.nextTick(cb, null)
-  if (this._parent) return process.nextTick(cb, new Error('Cannot write to a checkout'))
+
+  if (this._checkout) {
+    return process.nextTick(cb, new Error('Cannot put on a checkout'))
+  }
 
   var self = this
-  var nodes = []
-  var i = 0
+
+  key = normalizeKey(key)
 
   this._lock(function (release) {
-    loop(null)
+    var clock = self._clock()
+    self.heads(function (err, heads) {
+      if (err) return unlock(err)
+      put(self, clock, heads, key, val, unlock)
+    })
 
-    function loop (err) {
-      if (err) return done(err)
-
-      if (i === batch.length) {
-        self._localWriter.batch(nodes, done)
-        return
-      }
-
-      var b = batch[i++]
-      self._put(b.key, b.value, nodes, loop)
-    }
-
-    function done (err) {
-      release(cb, err, nodes)
+    function unlock (err) {
+      release(cb, err)
     }
   })
 }
 
-DB.prototype.createWriteStream = function (cb) {
-  var self = this
-  return bulk.obj(write)
-
-  function write (batch, cb) {
-    var flattened = []
-    for (var i = 0; i < batch.length; i++) {
-      var content = batch[i]
-      if (Array.isArray(content)) {
-        for (var j = 0; j < content.length; j++) {
-          flattened.push(content[j])
-        }
-      } else {
-        flattened.push(content)
-      }
-    }
-    self.batch(flattened, cb)
-  }
+HyperDB.prototype.del = function (key, cb) {
+  this.put(key, null, cb)
 }
 
-DB.prototype.heads = function (cb) {
-  var result = []
-  var error = null
+HyperDB.prototype.watch = function (key, cb) {
+  if (typeof key === 'function') return this.watch('', key)
+  return watch(this, normalizeKey(key), cb)
+}
+
+HyperDB.prototype.get = function (key, opts, cb) {
+  if (typeof opts === 'function') return this.get(key, null, opts)
+
   var self = this
-  var missing = 0
-  var i = 0
 
-  this.ready(onready)
+  this.heads(function (err, heads) {
+    if (err) return cb(err)
+    get(self, heads, normalizeKey(key), opts, cb)
+  })
+}
 
-  function onready (err) {
+HyperDB.prototype.version = function (cb) {
+  var self = this
+
+  this.heads(function (err, heads) {
     if (err) return cb(err)
 
-    if (self._heads) {
-      return cb(null, self._heads)
+    var buffers = []
+
+    for (var i = 0; i < heads.length; i++) {
+      buffers.push(self.feeds[heads[i].feed].key)
+      buffers.push(Buffer.from(varint.encode(heads[i].seq)))
     }
 
-    for (; i < self._writers.length; i++) {
-      missing++
-      self._writers[i].head(onhead)
-    }
+    cb(null, Buffer.concat(buffers))
+  })
+}
+
+HyperDB.prototype.checkout = function (version, opts) {
+  if (!opts) opts = {}
+  return new HyperDB(this._storage, this.key, {
+    checkout: this,
+    version: version,
+    map: opts.map !== undefined ? opts.map : this._map,
+    reduce: opts.reduce !== undefined ? opts.reduce : this._reduce
+  })
+}
+
+HyperDB.prototype.snapshot = function (opts) {
+  return this.checkout(null, opts)
+}
+
+HyperDB.prototype.heads = function (cb) {
+  if (!this.opened) return readyAndHeads(this, cb)
+  if (this._heads) return process.nextTick(cb, null, this._heads)
+
+  var self = this
+  var len = this._writers.length
+  var missing = len
+  var error = null
+  var nodes = new Array(len)
+
+  for (var i = 0; i < len; i++) {
+    this._writers[i].head(onhead)
   }
 
-  function onhead (err, val, updated) {
-    if (updated) onready(null)
-
+  function onhead (err, head, i) {
     if (err) error = err
-    else if (val) result[val.feed] = val
+    else nodes[i] = head
+
     if (--missing) return
 
     if (error) return cb(error)
+    if (len !== self._writers.length) return self.heads(cb)
 
-    for (var i = 0; i < result.length; i++) {
-      var head = result[i]
-      if (!head) continue
-
-      for (var j = 0; j < head.clock.length; j++) {
-        if (result[j] && result[j].seq < head.clock[j]) result[j] = null
-      }
-    }
-
-    cb(null, result.filter(Boolean))
+    if (nodes.length === 1) return cb(null, nodes[0] ? nodes : [])
+    cb(null, filterHeads(nodes))
   }
 }
 
-DB.prototype.checkout = function (version, opts) {
-  if (!opts) opts = {}
-  if (typeof version === 'string') version = toBuffer(version, 'hex')
-
-  opts.parent = this
-  opts.checkout = versionToHeads(version)
-
-  return new DB(this._storage, null, opts)
+HyperDB.prototype._index = function (key) {
+  if (key.key) key = key.key
+  for (var i = 0; i < this.feeds.length; i++) {
+    if (this.feeds[i].key.equals(key)) return i
+  }
+  return -1
 }
 
-DB.prototype.version = function (cb) {
+HyperDB.prototype.authenticated = function (key) {
+  return this._index(key) > -1
+}
+
+HyperDB.prototype.authorize = function (key, cb) {
+  if (!cb) cb = noop
+
   var self = this
 
-  this.heads(function (err, heads) {
+  this.heads(function (err) { // populates .feeds to be up to date
     if (err) return cb(err)
-
-    var arr = []
-
-    for (var i = 0; i < heads.length; i++) {
-      var h = heads[i]
-      var w = self._writers[h.feed]
-
-      arr.push({key: w.key, seq: h.seq})
-    }
-
-    var version = headsToVersion(arr)
-
-    cb(null, version)
+    self._addWriter(key, function (err) {
+      if (err) return cb(err)
+      self.put('', null, cb)
+    })
   })
 }
 
-DB.prototype.authorize = function (key, cb) {
-  if (this._parent) return process.nextTick(cb || noop, new Error('Cannot write to a checkout'))
-  this._createWriter(toBuffer(key, 'hex'))
-  this.put('', '', cb)
-}
-
-DB.prototype.replicate = function (opts) {
-  if (!protocol) protocol = require('hypercore-protocol')
+HyperDB.prototype.replicate = function (opts) {
   if (!opts) opts = {}
 
-  var len = this._writers.length
-  opts.expectedFeeds = len
-
   var self = this
-  var stream = protocol(opts)
+  var expectedFeeds = this._writers.length
+  var factor = opts.externalData ? 2 : 1
 
-  opts.stream = stream
+  opts.expectedFeeds = expectedFeeds * factor
+  if (!opts.stream) opts.stream = protocol(opts)
+  var stream = opts.stream
 
-  this.ready(function (err) {
+  if (!opts.live) stream.on('prefinalize', prefinalize)
+
+  this.ready(onready)
+
+  return stream
+
+  function onready (err) {
     if (err) return stream.destroy(err)
     if (stream.destroyed) return
 
-    for (var i = 0; i < self._writers.length; i++) {
-      self._writers[i].feed.replicate(opts)
-    }
+    var i = 0
 
-    self.on('_writer', onwriter)
-    if (!self.sparse) {
-      onappend()
-      self.on('append', onappend)
-    }
-
+    self._replicating.push(replicate)
     stream.on('close', onclose)
-    stream.on('end', onclose)
+
+    replicate()
+
+    function replicate () {
+      for (; i < self.feeds.length; i++) {
+        self.feeds[i].replicate(opts)
+      }
+    }
 
     function onclose () {
-      self.removeListener('append', onappend)
-      self.removeListener('_writer', onwriter)
-    }
-
-    function onappend () {
-      // hack! make api in hypercore-protocol for this
-      if (stream.destroyed) return
-      stream.expectedFeeds += 1e9
-      self._update(function () {
-        stream.expectedFeeds -= 1e9
-        stream.expectedFeeds += (self._writers.length - len)
-        len = self._writers.length
-        if (!stream.expectedFeeds) stream.finalize()
-      })
-    }
-
-    function onwriter (w) {
-      if (stream.destroyed) return
-      w.feed.replicate(opts)
-    }
-  })
-
-  return stream
-}
-
-DB.prototype.watch = function (key, onchange) {
-  var self = this
-  var prev = null
-
-  update()
-  this.on('append', update)
-
-  return function unwatch () {
-    onchange = noop
-    self.removeListener('append', update)
-  }
-
-  function update () {
-    self._closest(key, check)
-  }
-
-  function check (err, nodes) {
-    if (err) return onchange(err)
-
-    if (!prev) {
-      prev = nodes
-      return
-    }
-
-    var changed = nodes.length !== prev.length
-    for (var i = 0; i < nodes.length && !changed; i++) {
-      changed = nodes[i].feed !== prev[i].feed || nodes[i].seq !== prev[i].seq
-    }
-
-    prev = nodes
-    if (changed) onchange(null)
-  }
-}
-
-DB.prototype._closest = function (key, cb) {
-  var nodes = []
-  var len = hash(key).length
-
-  this._get(key, false, null, onvisit, done)
-
-  function onvisit (node, matchLength, head) {
-    if (!head) return
-    if (matchLength >= len && noDup(nodes, node)) {
-      nodes.push(node)
+      var i = self._replicating.indexOf(replicate)
+      remove(self._replicating, i)
     }
   }
 
-  function done (err) {
-    if (err) return cb(err)
-    cb(null, nodes.sort(sortNodes))
-  }
-}
-
-DB.prototype.put = function (key, value, cb) {
-  if (this._parent) return process.nextTick(cb || noop, new Error('Cannot write to a checkout'))
-  var self = this
-
-  this._lock(function (release) {
-    self._put(key, value, null, function (err, node) {
-      release(cb, err, node)
-    })
-  })
-}
-
-DB.prototype._put = function (key, value, batch, cb) {
-  if (!cb) cb = noop
-
-  var self = this
-  var path = hash(key, true)
-
-  this.heads(function (err, heads) {
-    if (err) return cb(err)
-
-    if (!self._localWriter) self._localWriter = self._createWriter(self.local.key, 'local')
-
-    var feed = self._localWriter.id
-    var clock = []
-    var i = 0
-    var len = self._localWriter.feed.length
-
-    if (batch && batch.length) {
-      len += batch.length
-      heads[feed] = batch[batch.length - 1]
-    }
-
-    for (i = 0; i < self._writers.length; i++) {
-      clock.push(i === feed ? 0 : self._writers[i].feed.length)
-    }
-
-    var node = {
-      seq: len,
-      feed: feed,
-      key: key,
-      path: path,
-      value: value,
-      clock: clock,
-      trie: []
-    }
-
-    var missing = heads.length
-    var error = null
-
-    if (!missing) {
-      missing++
-      onput(null)
-      return
-    }
-
-    for (i = 0; i < heads.length; i++) {
-      self._visitPut(key, path, 0, 0, 0, heads[i], heads, node.trie, batch, onput)
-    }
-
-    function onput (err) {
-      if (err) error = err
-      if (--missing) return
-
-      if (error) return cb(err)
-
-      if (batch) {
-        batch.push(node)
-        return ondone(null, node)
-      }
-
-      self._localWriter.append(node, ondone)
-    }
-
-    function ondone (err) {
+  function prefinalize (cb) {
+    self.heads(function (err) {
       if (err) return cb(err)
-      return cb(null, self._map ? self._map(node) : node)
-    }
-  })
-}
-
-DB.prototype.path = function (key, cb) {
-  var path = []
-  this._get(key, false, null, onvisit, done)
-
-  function onvisit (node) {
-    path.push(node)
-  }
-
-  function done (err) {
-    if (err) return cb(err)
-    cb(null, path)
-  }
-}
-
-DB.prototype.get = function (key, opts, cb) {
-  if (typeof opts === 'function') return this.get(key, null, opts)
-  this._get(key, !!(opts && opts.wait), [], noop, cb)
-}
-
-DB.prototype._get = function (key, wait, result, visit, cb) {
-  var path = hash(key, true)
-  var self = this
-  var updates = this._updates
-
-  this.heads(function (err, heads) {
-    if (err) return cb(err)
-
-    if (!heads.length) {
-      if (wait) return self._wait(key, updates, result, visit, cb)
-      return cb(null, null)
-    }
-
-    var missing = heads.length
-    var error = null
-
-    for (var i = 0; i < heads.length; i++) {
-      self._visitGet(key, path, 0, heads[i], heads, result, visit, onget)
-    }
-
-    function onget (err) {
-      if (err) error = err
-      if (--missing) return
-      if (error) return cb(error)
-
-      if (!result || !result.length) {
-        if (wait) return self._wait(key, updates, result, visit, cb)
-        return cb(null, null)
-      }
-
-      if (self._map) result = result.map(self._map)
-      if (self._reduce) result = result.reduce(self._reduce)
-
-      cb(null, result)
-    }
-  })
-}
-
-DB.prototype._wait = function (key, oldUpdate, result, visit, cb) {
-  if (oldUpdate !== this._updates) return this._get(key, true, result, visit, cb)
-  this.once('remote-update', this._get.bind(this, key, true, result, visit, cb))
-}
-
-DB.prototype._visitPut = function (key, path, i, j, k, node, heads, trie, batch, cb) {
-  var writers = this._writers
-  var self = this
-  var missing = 0
-  var error = null
-  var vals = null
-  var remoteVals = null
-
-  for (; i < path.length; i++) {
-    var val = path[i]
-    var local = trie[i]
-    var remote = node.trie[i] || []
-
-    // copy old trie
-    for (; j < remote.length; j++) {
-      if (j === val && val !== hash.TERMINATE) continue
-
-      if (!local) local = trie[i] = []
-      vals = local[j] = local[j] || []
-      remoteVals = remote[j] || []
-
-      for (; k < remoteVals.length; k++) {
-        var rval = remoteVals[k]
-
-        if (val === hash.TERMINATE) {
-          getBatch(self, writers[rval.feed], batch, rval.seq, onfilterdups)
-          return
-        }
-
-        if (noDup(vals, rval)) vals.push(rval)
-      }
-      k = 0
-    }
-    j = 0
-
-    if (node.path[i] !== val || (node.path[i] === hash.TERMINATE && node.key !== key)) {
-      // trie is splitting
-      if (!local) local = trie[i] = []
-      vals = local[node.path[i]] = local[node.path[i]] || []
-      remoteVals = remote[val]
-      vals.push({feed: node.feed, seq: node.seq})
-
-      if (!remoteVals || !remoteVals.length) return cb(null)
-
-      missing = remoteVals.length
-      error = null
-
-      for (var l = 0; l < remoteVals.length; l++) {
-        getBatch(self, writers[remoteVals[l].feed], batch, remoteVals[l].seq, onremoteval)
-      }
-      return
-    }
-  }
-
-  cb(null)
-
-  function onfilterdups (err, val) {
-    if (err) return cb(err)
-    var valPointer = {feed: val.feed, seq: val.seq}
-    if (val.key !== key && noDup(vals, valPointer)) vals.push(valPointer)
-    self._visitPut(key, path, i, j, k + 1, node, heads, trie, batch, cb)
-  }
-
-  function onremoteval (err, val) {
-    if (err) return onvisit(err)
-    if (!updateHead(val, node, heads)) return onvisit(null)
-    self._visitPut(key, path, i + 1, j, k, val, heads, trie, batch, onvisit)
-  }
-
-  function onvisit (err) {
-    if (err) error = err
-    if (!--missing) cb(error)
-  }
-}
-
-function getBatch (self, w, batch, seq, cb) {
-  if (!batch || self._localWriter !== w || seq < w.feed.length) return w.get(seq, cb)
-  process.nextTick(cb, null, batch[seq - w.feed.length])
-}
-
-DB.prototype._openCheckout = function (cb) {
-  var self = this
-
-  this._parent.ready(function (err) {
-    if (err) return cb(err)
-    self.source = self._parent.source
-    self.key = self._parent.key
-    self.discoveryKey = self._parent.discoveryKey
-    self.local = self._parent.local
-    self._writers = self._parent._writers
-    self._localWriter = self._parent._localWriter
-
-    var error = null
-    var missing = self._checkout.length
-    var result = []
-    if (!missing) return cb(null)
-
-    for (var i = 0; i < self._checkout.length; i++) {
-      var c = self._checkout[i]
-      var next = onnode(i)
-      var feed = getFeed(c.key)
-      if (!feed) {
-        next(new Error('Invalid version'))
-      } else {
-        feed.get(c.seq, next)
-      }
-    }
-
-    function onnode (i) {
-      return function (err, node) {
-        if (err) error = err
-        else result[i] = node
-        if (--missing) return
-        self._heads = result
-        cb(error)
-      }
-    }
-
-    function getFeed (key) {
-      for (var i = 0; i < self._writers.length; i++) {
-        if (self._writers[i].key.toString('hex') === key.toString('hex')) {
-          return self._writers[i]
-        }
-      }
-      return null
-    }
-  })
-}
-
-DB.prototype._open = function (cb) {
-  var self = this
-  var source = this._createFeed(this.key, 'source')
-
-  source.on('ready', function () {
-    self.source = source
-    self.key = source.key
-    self.discoveryKey = source.discoveryKey
-
-    var w = self._createWriter(self.key, 'source')
-
-    if (source.writable) {
-      self.local = source
-      self._localWriter = w
-      return self._update(cb)
-    }
-
-    var local = self._createFeed(null, 'local')
-
-    local.on('ready', function () {
-      self.local = local
-      self._update(cb)
+      stream.expectedFeeds += factor * (self._writers.length - expectedFeeds)
+      expectedFeeds = self._writers.length
+      cb()
     })
-  })
+  }
 }
 
-DB.prototype._update = function (cb) {
-  if (!cb) cb = noop
+HyperDB.prototype._clock = function () {
+  var clock = new Array(this._writers.length)
 
-  var self = this
-  var missing = this._writers.length
+  for (var i = 0; i < clock.length; i++) {
+    var w = this._writers[i]
+    clock[i] = w === this._localWriter ? w._clock : w.length()
+  }
+
+  return clock
+}
+
+HyperDB.prototype._getPointer = function (feed, index, cb) {
+  this._writers[feed].get(index, cb)
+}
+
+HyperDB.prototype._getAllPointers = function (list, cb) {
   var error = null
-  var i = 0
+  var result = new Array(list.length)
+  var missing = result.length
 
-  for (; i < this._writers.length; i++) {
-    this._writers[i].head(done)
+  if (!missing) return process.nextTick(cb, null, result)
+
+  for (var i = 0; i < result.length; i++) {
+    this._getPointer(list[i].feed, list[i].seq, done)
   }
 
-  function done (err, head, updated) {
+  function done (err, node) {
     if (err) error = err
-
-    if (updated) {
-      for (; i < self._writers.length; i++) {
-        missing++
-        self._writers[i].head(done)
-      }
-    }
-    if (!--missing) cb(error)
+    else result[indexOf(list, node)] = node
+    if (!--missing) cb(error, result)
   }
 }
 
-DB.prototype._createFeed = function (key, dir) {
-  if (!dir) {
-    dir = key.toString('hex')
-    dir = 'peers/' + dir.slice(0, 2) + '/' + dir.slice(2)
-  }
-
-  if (key) {
-    if (this.local && this.local.key && this.local.key.equals(key)) return this.local
-    if (this.source && this.source.key && this.source.key.equals(key)) return this.source
-  }
+HyperDB.prototype._writer = function (dir, key) {
+  var writer = key && this._byKey.get(key.toString('hex'))
+  if (writer) return writer
 
   var self = this
-  var feed = hypercore(storage, key, {sparse: this.sparse})
+  var feed = hypercore(storage, key)
 
-  feed.on('error', onerror)
+  writer = new Writer(self, feed)
   feed.on('append', onappend)
-  feed.on('download', ondownload)
-  feed.on('upload', onupload)
-  feed.on('remote-add', onremoteadd)
-  feed.on('remote-update', onremoteupdate)
-  feed.on('remote-remove', onremoteremove)
 
-  return feed
+  if (key) addWriter(null)
+  else feed.ready(addWriter)
 
-  function onupload (index, data) {
-    self.emit('upload', this, index, data)
-  }
-
-  function ondownload (index, data) {
-    self.emit('download', this, index, data)
-  }
-
-  function onremoteupdate (peer) {
-    self._updates++
-    self.emit('remote-update', this, peer)
-  }
-
-  function onremoteadd (peer) {
-    self.emit('remote-add', this, peer)
-  }
-
-  function onremoteremove (peer) {
-    self.emit('remote-remove', this, peer)
-  }
-
-  function onerror (err) {
-    self.emit('error', err)
-  }
+  return writer
 
   function onappend () {
-    self.emit('append', this)
+    for (var i = 0; i < self._watching.length; i++) self._watching[i]._kick()
+    self.emit('append', feed)
+  }
+
+  function addWriter (err) {
+    if (!err) self._byKey.set(feed.key.toString('hex'), writer)
   }
 
   function storage (name) {
@@ -690,487 +304,379 @@ DB.prototype._createFeed = function (key, dir) {
   }
 }
 
-DB.prototype._createWriter = function (key, dir) {
-  for (var i = 0; i < this._writers.length; i++) {
-    var w = this._writers[i]
-    if (key && w.key.equals(key)) return w
-  }
+HyperDB.prototype._addWriter = function (key, cb) {
+  var self = this
+  var writer = this._writer('peers/' + key.toString('hex'), key)
 
-  var res = writer(this, this._createFeed(key, dir), this._writers.length)
-
-  this._writers.push(res)
-  this.emit('_writer', res)
-
-  return res
+  writer._feed.ready(function (err) {
+    if (err) return cb(err)
+    if (self.authenticated(key)) return cb(null)
+    self._pushWriter(writer)
+    cb(null)
+  })
 }
 
-DB.prototype._visitGet = function (key, path, i, node, heads, result, onvisit, cb) {
+HyperDB.prototype._pushWriter = function (writer) {
+  writer._id = this._writers.push(writer) - 1
+  this.feeds.push(writer._feed)
+
+  if (!this.opened) return
+
+  for (var i = 0; i < this._replicating.length; i++) {
+    this._replicating[i]()
+  }
+}
+
+HyperDB.prototype.list = function (prefix, opts, cb) {
+  if (typeof prefix === 'function') return this.list('', null, prefix)
+  if (typeof opts === 'function') return this.list(prefix, null, opts)
+
+  var ite = this.iterator(prefix, opts)
+  var list = []
+
+  ite.next(loop)
+
+  function loop (err, nodes) {
+    if (err) return cb(err)
+    if (!nodes) return cb(null, list)
+    list.push(nodes)
+    ite.next(loop)
+  }
+}
+
+HyperDB.prototype.changes = function () {
+  return changes(this)
+}
+
+HyperDB.prototype.diff = function (other, prefix, opts) {
+  if (isOptions(prefix)) return this.diff(other, null, prefix)
+  return differ(this, other || checkoutEmpty(this), prefix || '', opts)
+}
+
+HyperDB.prototype.iterator = function (prefix, opts) {
+  if (isOptions(prefix)) return this.iterator('', prefix)
+  return iterator(this, normalizeKey(prefix || ''), opts)
+}
+
+HyperDB.prototype.createChangesStream = function () {
+  return toStream(this.changes())
+}
+
+HyperDB.prototype.createDiffStream = function (other, prefix, opts) {
+  if (isOptions(prefix)) return this.createDiffStream(other, '', prefix)
+  return toStream(this.diff(other, prefix, opts))
+}
+
+HyperDB.prototype.createReadStream = function (prefix, opts) {
+  return toStream(this.iterator(prefix, opts))
+}
+
+HyperDB.prototype._ready = function (cb) {
   var self = this
-  var writers = this._writers
-  var missing = 0
-  var error = null
-  var trie = null
-  var vals = null
 
-  for (; i < path.length; i++) {
-    if (node.path[i] === path[i]) continue
-    onvisit(node, i, true)
-
-    // check trie
-    trie = node.trie[i]
-    if (!trie) return cb(null)
-
-    vals = trie[path[i]]
-
-    // not found
-    if (!vals || !vals.length) return cb(null)
-
-    missing = vals.length
-    error = null
-
-    for (var j = 0; j < vals.length; j++) {
-      writers[vals[j].feed].get(vals[j].seq, onval)
-    }
-
+  if (this._checkout) {
+    if (this._version) this._checkout.heads(onversion)
+    else this._checkout.heads(oncheckout)
     return
   }
 
-  // check for collisions
-  trie = node.trie[path.length - 1]
-  vals = trie && trie[hash.TERMINATE]
+  if (!this.source) this.source = feed('source', this.key)
 
-  pushMaybe(key, node, result, onvisit)
+  this.source.ready(function (err) {
+    if (err) return done(err)
+    if (self.source.writable) self.local = self.source
+    if (!self.local) self.local = feed('local')
 
-  if (!vals || !vals.length) return cb(null)
+    self.key = self.source.key
+    self.discoveryKey = self.source.discoveryKey
 
-  missing = vals.length
-  error = null
+    self.local.ready(function (err) {
+      if (err) return done(err)
 
-  for (var k = 0; k < vals.length; k++) {
-    writers[vals[k].feed].get(vals[k].seq, onpush)
+      self._localWriter = self._writers[self.feeds.indexOf(self.local)]
+      self.opened = true
+
+      self._localWriter.head(done)
+    })
+  })
+
+  function done (err) {
+    if (err) return cb(err)
+    self.emit('ready')
+    cb(null)
   }
 
-  function onpush (err, val) {
-    if (err) error = err
-    else pushMaybe(key, val, result, onvisit)
-    if (!--missing) cb(error)
+  function feed (dir, key) {
+    var writer = self._writer(dir, key)
+    self._pushWriter(writer)
+    return writer._feed
   }
 
-  function onval (err, val) {
+  function onversion (err) {
     if (err) return done(err)
 
-    if (!updateHead(val, node, heads)) {
-      onvisit(val, i, false)
-      done(null)
-      return
+    var offset = 0
+    var missing = 0
+    var nodes = []
+    var error = null
+
+    while (offset < self._version.length) {
+      missing++
+      var key = self._version.slice(offset, offset + 32)
+      var seq = varint.decode(self._version, offset + 32)
+      offset += 32 + varint.decode.bytes
+      var writer = self._checkout._byKey.get(key.toString('hex'))
+      writer.get(seq, onnode)
     }
 
-    self._visitGet(key, path, i + 1, val, heads, result, onvisit, done)
+    if (!missing) oncheckout(null, [])
+
+    function onnode (err, node) {
+      if (err) error = err
+      else nodes.push(node)
+      if (!--missing) oncheckout(error, nodes)
+    }
   }
+
+  function oncheckout (err, heads) {
+    if (err) return done(err)
+
+    self.opened = true
+    self.source = self._checkout.source
+    self.local = self._checkout.local
+    self.key = self._checkout.key
+    self.discoveryKey = self._checkout.discoveryKey
+    self._heads = heads
+
+    done(null)
+  }
+}
+
+function Writer (multi, feed) {
+  this._id = 0
+  this._multi = multi
+  this._feed = feed
+  this._feeds = 0
+  this._feedsMessage = null
+  this._feedsLoaded = 0
+  this._entry = 0
+  this._clock = 0
+  this._encodeMap = []
+  this._decodeMap = []
+  this._checkout = false
+  this._length = 0
+}
+
+Writer.prototype.append = function (entry, cb) {
+  if (!this._clock) this._clock = this._feed.length
+
+  var enc = messages.Entry
+  this._entry = this._clock++
+  entry.clock[this._id] = this._clock
+
+  if (this._needsInflate()) {
+    enc = messages.InflatedEntry
+    entry.feeds = this._mapList(this._multi.feeds, this._encodeMap, null)
+    this._feedsMessage = entry
+    this._feedsLoaded = this._feeds = this._entry
+    this._updateFeeds()
+  }
+
+  entry.clock = this._mapList(entry.clock, this._encodeMap, 0)
+  entry.inflate = this._feeds
+  entry.trie = trie.encode(entry.trie, this._encodeMap)
+  if (entry.value) entry.value = this._multi._valueEncoding.encode(entry.value)
+
+  this._feed.append(enc.encode(entry), cb)
+}
+
+Writer.prototype._needsInflate = function () {
+  var msg = this._feedsMessage
+  return !msg || msg.feeds.length !== this._multi.feeds.length
+}
+
+Writer.prototype._maybeUpdateFeeds = function () {
+  if (!this._feedsMessage) return
+  if (this._decodeMap.length === this._multi.feeds.length) return
+  if (this._encodeMap.length === this._multi.feeds.length) return
+  this._updateFeeds()
+}
+
+Writer.prototype.get = function (seq, cb) {
+  var self = this
+
+  this._feed.get(seq, function (err, val) {
+    if (err) return cb(err)
+
+    val = messages.Entry.decode(val)
+    val[util.inspect.custom] = inspect
+    val.seq = seq
+    val.path = hash(val.key, true)
+    val.value = val.value && self._multi._valueEncoding.decode(val.value)
+
+    if (self._feedsMessage && self._feedsLoaded === val.inflate) {
+      self._maybeUpdateFeeds()
+      val.feed = self._id
+      val.clock = self._mapList(val.clock, self._decodeMap, 0)
+      val.trie = trie.decode(val.trie, self._decodeMap)
+      return cb(null, val, self._id)
+    }
+
+    self._loadFeeds(val, cb)
+  })
+}
+
+Writer.prototype.head = function (cb) {
+  var len = this.length()
+  if (!len) return process.nextTick(cb, null, null, this._id)
+  this.get(len - 1, cb)
+}
+
+Writer.prototype._mapList = function (list, map, def) {
+  var mapped = []
+  var i
+  for (i = 0; i < map.length; i++) mapped[map[i]] = i < list.length ? list[i] : def
+  for (; i < list.length; i++) mapped[i] = list[i]
+  for (i = 0; i < mapped.length; i++) {
+    if (!mapped[i]) mapped[i] = def
+  }
+  return mapped
+}
+
+Writer.prototype._loadFeeds = function (head, cb) {
+  var self = this
+
+  if (head.feeds) done(head)
+  else this._feed.get(head.inflate, onfeeds)
+
+  function onfeeds (err, buf) {
+    if (err) return cb(err)
+    done(messages.InflatedEntry.decode(buf))
+  }
+
+  function done (msg) {
+    if (msg.seq < self._feedsLoaded) return cb(null, head, self._id)
+
+    self._feedsLoaded = msg.seq
+    self._feedsMessage = msg
+    self._addWriters(head, cb)
+  }
+}
+
+Writer.prototype._addWriters = function (head, cb) {
+  var self = this
+  var id = this._id
+  var writers = this._feedsMessage.feeds || []
+  var missing = writers.length + 1
+  var error = null
+
+  for (var i = 0; i < writers.length; i++) {
+    this._multi._addWriter(writers[i].key, done)
+  }
+
+  done(null)
 
   function done (err) {
     if (err) error = err
-    if (!--missing) cb(error)
+    if (--missing) return
+    if (error) return cb(error)
+    self._updateFeeds()
+    head.feed = self._id
+    head.clock = self._mapList(head.clock, self._decodeMap, 0)
+    head.trie = trie.decode(head.trie, self._decodeMap)
+    cb(null, head, id)
   }
 }
 
-DB.prototype.createDiffStream = function (key, checkout, head) {
-  if (!checkout) checkout = []  // Diff from the beginning
+Writer.prototype._updateFeeds = function () {
+  var writers = this._feedsMessage.feeds || []
+  var map = new Map()
+  var i
 
-  var self = this
-
-  function versionToList (version) {
-    var map = []
-    var heads = versionToHeads(version)
-    for (var i = 0; i < heads.length; i++) {
-      for (var j = 0; j < self._writers.length; j++) {
-        if (self._writers[j].key.equals(heads[i].key)) {
-          map[j] = heads[i].seq
-          break
-        }
-      }
-    }
-    return map
+  for (i = 0; i < this._multi.feeds.length; i++) {
+    map.set(this._multi.feeds[i].key.toString('hex'), i)
   }
 
-  if (checkout.length) checkout = versionToList(checkout)
-  if (head) head = versionToList(head)
+  for (i = 0; i < writers.length; i++) {
+    var id = map.get(writers[i].key.toString('hex'))
+    this._decodeMap[i] = id
+    this._encodeMap[id] = i
+  }
+}
 
-  var stream = new Readable({objectMode: true})
-  stream._read = noop
+Writer.prototype.length = function () {
+  if (this._checkout) return this._length
+  return Math.max(this._feed.length, this._feed.remoteLength)
+}
 
-  function cb (err) {
-    stream.emit('error', err)
+function filterHeads (list) {
+  var heads = []
+  for (var i = 0; i < list.length; i++) {
+    if (isHead(list[i], list)) heads.push(list[i])
+  }
+  return heads
+}
+
+function isHead (node, list) {
+  if (!node) return false
+
+  var clock = node.seq + 1
+
+  for (var i = 0; i < list.length; i++) {
+    var other = list[i]
+    if (other === node || !other) continue
+    if ((other.clock[node.feed] || 0) >= clock) return false
   }
 
-  var path = hash(key, true)
-  var missing = 2
+  return true
+}
 
-  var a = {}
-  var b = {}
+function checkoutEmpty (db) {
+  db = db.checkout(Buffer.from([]))
+  return db
+}
 
-  // 1: Walk the trie starting at the head of all logs
-  if (!head) this.heads(onHeads)
-  else snapshotToNodes(head, onHeads)
-
-  function onHeads (err, heads) {
+function readyAndHeads (self, cb) {
+  self.ready(function (err) {
     if (err) return cb(err)
-    if (!heads.length) {
-      return onDoneFromHead(null, {})
-    }
-
-    missing--
-    var visited = {}
-    for (var i = 0; i < heads.length; i++) {
-      missing++
-      self._visitTrie(key, path, heads[i], {}, checkout, visited, onDoneFromHead)
-    }
-  }
-
-  // 2: Walk the trie starting at CHECKOUT
-  snapshotToNodes(checkout, function (err, nodes) {
-    if (err) return cb(err)
-    if (!nodes.length) {
-      return onDoneFromSnapshot(null, {})
-    }
-    missing--
-    missing += nodes.length
-    var visited = {}
-    for (var i = 0; i < nodes.length; i++) {
-      self._visitTrie(key, path, nodes[i], {}, null, visited, onDoneFromSnapshot)
-    }
+    self.heads(cb)
   })
-
-  function snapshotToNodes (snapshot, cb) {
-    cb = once(cb)
-    var result = []
-    var keys = Object.keys(snapshot || {})
-    if (!keys.length) return cb(null, result)
-    var pending = keys.length
-    for (var i = 0; i < keys.length; i++) {
-      var elm = snapshot[i]
-      self._writers[i].get(elm, function (err, node) {
-        if (err) return cb(err)
-        result.push(node)
-        if (!--pending) cb(null, result)
-      })
-    }
-  }
-
-  function onDoneFromHead (err, result) {
-    if (err) return cb(err)
-    merge(a, result)
-    if (!--missing) onAllDone()
-  }
-
-  function onDoneFromSnapshot (err, result) {
-    if (err) return cb(err)
-    merge(b, result)
-    if (!--missing) onAllDone()
-  }
-
-  // Merge b into a
-  function merge (a, b) {
-    Object.keys(b).forEach(function (key) {
-      a[key] = (a[key] || []).concat(b[key])
-    })
-    return a
-  }
-
-  function onAllDone () {
-    a = a || {}
-    b = b || {}
-    var diff = diffNodeSets(a, b)
-    for (var i = 0; i < diff.length; i++) {
-      stream.push(diff[i])
-    }
-    stream.push(null)
-  }
-
-  return stream
 }
 
-DB.prototype._visitTrie = function (key, path, node, heads, halt, visited, cb, type) {
-  var self = this
-  var missing = 0
-
-  cb = once(cb)
-
-  var id = node.feed + ',' + node.seq
-  visited[id] = true
-
-  // We've traveled past 'snapshot' -- bail.
-  if (halt && halt[node.feed] !== undefined && halt[node.feed] >= node.seq) {
-    return cb(null, {})
+function indexOf (list, ptr) {
+  for (var i = 0; i < list.length; i++) {
+    var p = list[i]
+    if (ptr.feed === p.feed && ptr.seq === p.seq) return i
   }
+  return -1
+}
 
-  // Check if this node matches the desired prefix.
-  var prefixMatch = true
-  for (var i = 0; i < path.length && path[i] !== hash.TERMINATE; i++) {
-    if (path[i] !== node.path[i]) {
-      prefixMatch = false
-      break
-    }
-  }
+function isOptions (opts) {
+  return typeof opts === 'object' && !!opts && !Buffer.isBuffer(opts)
+}
 
-  // Mark this match as either the first time we've seen it (heads), an older
-  // value of this key we're still tracking backwards in time (snapshot), or a
-  // duplicate that we've already procesed (deduped).
-  if (prefixMatch && !heads[node.key]) {
-    heads[node.key] = heads[node.key] || []
-    heads[node.key].push(node)
-  }
+function normalizeKey (key) {
+  if (!key.length) return ''
+  return key[0] === '/' ? key.slice(1) : key
+}
 
-  // Traverse the node's entire trie, recursively, hunting for more nodes with
-  // the desired prefix.
-  for (var k = 0; k < node.trie.length; k++) {
-    var trie = node.trie[k] || []
-    for (i = 0; i < trie.length; i++) {
-      var entrySet = trie[i] || []
-      for (var j = 0; j < entrySet.length; j++) {
-        var entry = entrySet[j]
-
-        id = entry.feed + ',' + entry.seq
-        if (visited[id]) continue
-        visited[id] = true
-
-        missing++
-        self._writers[entry.feed].get(entry.seq, function (err, node) {
-          if (err) return fin(null)
-          self._visitTrie(key, path, node, heads, halt, visited, function (err) {
-            if (err) return fin(err)
-            if (!--missing) fin(null)
-          })
-        })
-      }
-    }
-  }
-
-  if (!missing) fin(null)
-
-  // Finalize the results by taking a diff of 'heads' and 'snapshot'.
-  function fin () {
-    cb(null, heads)
+function createStorage (st) {
+  if (typeof st === 'function') return st
+  return function (name) {
+    return raf(path.join(st, name))
   }
 }
 
-DB.prototype.createHistoryStream = function (opts) {
-  opts = opts || {}
-
-  var self = this
-
-  var stream = new Readable({objectMode: true})
-  stream._read = noop
-
-  function cb (err) {
-    stream.emit('error', err)
-  }
-
-  var nodes = []
-  var seqs = []
-  var atFront = false  // whether the live stream has reached real-time
-
-  this.on('append', onAppend)
-
-  // Populate 'nodes' and 'seq' with first entry in each writer
-  initTraversal(function (err, theNodes, theSeqs) {
-    if (err) return cb(err)
-    nodes = theNodes
-    seqs = theSeqs
-    traverseNode()
-  })
-
-  function traverseNode () {
-    var next = nodes.reduce(
-      function (a, b) {
-        if (!a && !b) return null
-        else if (!a) return b
-        else if (!b) return a
-        else if (a.seq <= b.clock[a.feed]) return a
-        else return b
-      }, null)
-
-    // Avoid ending the stream with a null value if opts.live
-    if (!opts.live || next !== null) stream.push(next)
-
-    // No new nodes to traverse
-    if (!next) {
-      // Stream has ended
-      if (atFront || !opts.live) return
-
-      // Stop traversal; set up event listeners; wait
-      atFront = true
-      return
-    }
-
-    if (next.seq === self._writers[next.feed].feed.length - 1) {
-      nodes[next.feed] = null
-      return traverseNode()
-    }
-
-    self._writers[next.feed].get(next.seq + 1, function (err, newNode) {
-      if (err) return cb(err)
-      nodes[next.feed] = newNode
-      seqs[next.feed] = newNode.seq
-      traverseNode()
-    })
-  }
-
-  function getStartSeq (heads, key) {
-    if (!heads) {
-      return 0
-    } else {
-      for (var i = 0; i < heads.length; i++) {
-        if (heads[i].key.equals(key)) {
-          return heads[i].seq + 1
-        }
-      }
-      return 0
-    }
-  }
-
-  function initTraversal (cb) {
-    var startHeads = opts.start ? versionToHeads(opts.start) : null
-    var nodes = []
-    var seqs = []
-
-    var pending = self._writers.length + 1
-    for (var i = 0; i < self._writers.length; i++) {
-      (function (n) {
-        var seq = getStartSeq(startHeads, self._writers[n].key)
-        if (seq >= self._writers[n].feed.length) {
-          nodes[n] = null
-          seqs[n] = seq - 1
-          if (!--pending) cb(null, nodes, seqs)
-          return
-        }
-        self._writers[n].get(seq, function (err, node) {
-          if (err) return cb(err)
-          nodes[n] = node
-          seqs[n] = node.seq
-          if (!--pending) cb(null, nodes, seqs)
-        })
-      })(i)
-    }
-    if (!--pending) cb(null, nodes, seqs)
-  }
-
-  function resumeTraversal () {
-    atFront = false
-    traverseNode()
-  }
-
-  function onAppend (feed) {
-    for (var i = 0; i < self._writers.length; i++) {
-      var writer = self._writers[i]
-      if (writer.key.equals(feed.key)) {
-        var nextSeq = Number.isInteger(seqs[i]) ? seqs[i] + 1 : 0
-        ;(function (n) {
-          writer.get(nextSeq, function (err, latest) {
-            if (err) return cb(err)
-            nodes[n] = latest
-            seqs[n] = latest.seq
-            if (atFront) resumeTraversal()
-          })
-        })(i)
-        return
-      }
-    }
-  }
-
-  return stream
+function reduceFirst (a, b) {
+  return a
 }
 
 function noop () {}
 
-function diffNodeSets (a, b) {
-  var ak = Object.keys(a)
-  var result = []
-  for (var i = 0; i < ak.length; i++) {
-    var A = a[ak[i]]
-    var B = b[ak[i]]
-    if (A && B && !entriesEqual(A, B)) {
-      result.push({ type: 'del', name: ak[i], nodes: B })
-      result.push({ type: 'put', name: ak[i], nodes: A })
-    } else if (A && (!B || A === B)) {
-      result.push({ type: 'put', name: ak[i], nodes: A })
-    }
-  }
-  return result
-
-  function entriesEqual (a, b) {
-    if (a.length !== b.length) return false
-    for (var i = 0; i < a.length; i++) {
-      if (a[i] !== b[i]) return false
-    }
-    return true
-  }
-}
-
-function updateHead (newNode, oldNode, heads) {
-  var i = heads.indexOf(oldNode)
-  if (i !== -1) remove(heads, i)
-  if (!isHead(newNode, heads)) return false
-  heads.push(newNode)
-  return true
-}
-
-function isHead (node, heads) {
-  for (var i = 0; i < heads.length; i++) {
-    var head = heads[i]
-    if (head.feed === node.feed) return false
-    if (node.seq < head.clock[node.feed]) return false
-  }
-  return true
-}
-
-function pushMaybe (key, node, results, onvisit) {
-  onvisit(node, node.path.length, true)
-  if (results && node.key === key && noDup(results, node)) results.push(node)
-}
-
-function noDup (list, val) {
-  for (var i = 0; i < list.length; i++) {
-    if (list[i].feed === val.feed && list[i].seq === val.seq) {
-      return false
-    }
-  }
-  return true
-}
-
-function isOptions (opts) {
-  return !!(opts && typeof opts !== 'string' && !Buffer.isBuffer(opts))
-}
-
-function sortNodes (a, b) {
-  if (a.feed === b.feed) return a.seq - b.seq
-  return a.feed - b.feed
-}
-
-// Buffer -> [Head]
-function versionToHeads (version) {
-  var ptr = 0
-  var heads = []
-
-  while (ptr < version.length) {
-    var key = version.slice(ptr, ptr + 32)
-    ptr += 32
-    var seq = varint.decode(version, ptr)
-    ptr += varint.decode.bytes
-    heads.push({key: key, seq: seq})
-  }
-
-  return heads
-}
-
-// [Head] -> Buffer
-function headsToVersion (heads) {
-  var bufAccum = []
-
-  for (var i = 0; i < heads.length; i++) {
-    bufAccum.push(heads[i].key)
-    bufAccum.push(toBuffer(varint.encode(heads[i].seq)))
-  }
-
-  return Buffer.concat(bufAccum)
+function inspect () {
+  return `Node(key=${this.key}` +
+    `, value=${this.value}` +
+    `, seq=${this.seq}` +
+    `, feed=${this.feed})` +
+    `)`
 }

@@ -3,49 +3,75 @@ var create = require('./helpers/create')
 
 tape('basic put/get', function (t) {
   var db = create.one()
-  db.put('/hello', 'world', function (err, _node) {
+  db.put('hello', 'world', function (err) {
     t.error(err, 'no error')
-    db.get('/hello', function (err, node) {
+    db.get('hello', function (err, node) {
       t.error(err, 'no error')
-      t.same(node.key, '/hello', 'same key')
+      t.same(node.key, 'hello', 'same key')
       t.same(node.value, 'world', 'same value')
-      t.deepEquals(node, _node)
       t.end()
     })
+  })
+})
+
+tape('get on empty db', function (t) {
+  var db = create.one()
+
+  db.get('hello', function (err, node) {
+    t.error(err, 'no error')
+    t.same(node, null, 'node is not found')
+    t.end()
   })
 })
 
 tape('not found', function (t) {
   var db = create.one()
-  db.put('/hello', 'world', function (err) {
+  db.put('hello', 'world', function (err) {
     t.error(err, 'no error')
-    db.get('/hej', function (err, node) {
+    db.get('hej', function (err, node) {
       t.error(err, 'no error')
-      t.same(node, null)
+      t.same(node, null, 'node is not found')
       t.end()
     })
   })
 })
 
+tape('leading / is ignored', function (t) {
+  t.plan(7)
+  var db = create.one()
+  db.put('/hello', 'world', function (err) {
+    t.error(err, 'no error')
+    db.get('/hello', function (err, node) {
+      t.error(err, 'no error')
+      t.same(node.key, 'hello', 'same key')
+      t.same(node.value, 'world', 'same value')
+    })
+    db.get('hello', function (err, node) {
+      t.error(err, 'no error')
+      t.same(node.key, 'hello', 'same key')
+      t.same(node.value, 'world', 'same value')
+    })
+  })
+})
+
 tape('multiple put/get', function (t) {
-  t.plan(9)
+  t.plan(8)
 
   var db = create.one()
 
-  db.put('/hello', 'world', function (err) {
+  db.put('hello', 'world', function (err) {
     t.error(err, 'no error')
-    db.put('/world', 'hello', function (err, _node) {
+    db.put('world', 'hello', function (err) {
       t.error(err, 'no error')
-      db.get('/hello', function (err, node) {
+      db.get('hello', function (err, node) {
         t.error(err, 'no error')
-        t.same(node.key, '/hello', 'same key')
+        t.same(node.key, 'hello', 'same key')
         t.same(node.value, 'world', 'same value')
       })
-      db.get('/world', function (err, node) {
+      db.get('world', function (err, node) {
         t.error(err, 'no error')
-        t.same(node.key, '/world', 'same key')
+        t.same(node.key, 'world', 'same key')
         t.same(node.value, 'hello', 'same value')
-        t.same(_node, node)
       })
     })
   })
@@ -54,18 +80,18 @@ tape('multiple put/get', function (t) {
 tape('overwrites', function (t) {
   var db = create.one()
 
-  db.put('/hello', 'world', function (err) {
+  db.put('hello', 'world', function (err) {
     t.error(err, 'no error')
-    db.get('/hello', function (err, node) {
+    db.get('hello', function (err, node) {
       t.error(err, 'no error')
-      t.same(node.key, '/hello')
-      t.same(node.value, 'world')
-      db.put('/hello', 'verden', function (err) {
+      t.same(node.key, 'hello', 'same key')
+      t.same(node.value, 'world', 'same value')
+      db.put('hello', 'verden', function (err) {
         t.error(err, 'no error')
-        db.get('/hello', function (err, node) {
+        db.get('hello', function (err, node) {
           t.error(err, 'no error')
-          t.same(node.key, '/hello')
-          t.same(node.value, 'verden')
+          t.same(node.key, 'hello', 'same key')
+          t.same(node.value, 'verden', 'same value')
           t.end()
         })
       })
@@ -78,19 +104,19 @@ tape('put/gets namespaces', function (t) {
 
   var db = create.one()
 
-  db.put('/hello/world', 'world', function (err) {
+  db.put('hello/world', 'world', function (err) {
     t.error(err, 'no error')
-    db.put('/world', 'hello', function (err) {
+    db.put('world', 'hello', function (err) {
       t.error(err, 'no error')
-      db.get('/hello/world', function (err, node) {
+      db.get('hello/world', function (err, node) {
         t.error(err, 'no error')
-        t.same(node.key, '/hello/world')
-        t.same(node.value, 'world')
+        t.same(node.key, 'hello/world', 'same key')
+        t.same(node.value, 'world', 'same value')
       })
-      db.get('/world', function (err, node) {
+      db.get('world', function (err, node) {
         t.error(err, 'no error')
-        t.same(node.key, '/world')
-        t.same(node.value, 'hello')
+        t.same(node.key, 'world', 'same key')
+        t.same(node.value, 'hello', 'same value')
       })
     })
   })
@@ -101,19 +127,19 @@ tape('put in tree', function (t) {
 
   var db = create.one()
 
-  db.put('/hello', 'a', function (err) {
+  db.put('hello', 'a', function (err) {
     t.error(err, 'no error')
-    db.put('/hello/world', 'b', function (err) {
+    db.put('hello/world', 'b', function (err) {
       t.error(err, 'no error')
-      db.get('/hello', function (err, node) {
+      db.get('hello', function (err, node) {
         t.error(err, 'no error')
-        t.same(node.key, '/hello')
-        t.same(node.value, 'a')
+        t.same(node.key, 'hello', 'same key')
+        t.same(node.value, 'a', 'same value')
       })
-      db.get('/hello/world', function (err, node) {
+      db.get('hello/world', function (err, node) {
         t.error(err, 'no error')
-        t.same(node.key, '/hello/world')
-        t.same(node.value, 'b')
+        t.same(node.key, 'hello/world', 'same key')
+        t.same(node.value, 'b', 'same value')
       })
     })
   })
@@ -124,19 +150,19 @@ tape('put in tree reverse order', function (t) {
 
   var db = create.one()
 
-  db.put('/hello/world', 'b', function (err) {
+  db.put('hello/world', 'b', function (err) {
     t.error(err, 'no error')
-    db.put('/hello', 'a', function (err) {
+    db.put('hello', 'a', function (err) {
       t.error(err, 'no error')
-      db.get('/hello', function (err, node) {
+      db.get('hello', function (err, node) {
         t.error(err, 'no error')
-        t.same(node.key, '/hello')
-        t.same(node.value, 'a')
+        t.same(node.key, 'hello', 'same key')
+        t.same(node.value, 'a', 'same value')
       })
-      db.get('/hello/world', function (err, node) {
+      db.get('hello/world', function (err, node) {
         t.error(err, 'no error')
-        t.same(node.key, '/hello/world')
-        t.same(node.value, 'b')
+        t.same(node.key, 'hello/world', 'same key')
+        t.same(node.value, 'b', 'same value')
       })
     })
   })
@@ -147,28 +173,28 @@ tape('multiple put in tree', function (t) {
 
   var db = create.one()
 
-  db.put('/hello/world', 'b', function (err) {
+  db.put('hello/world', 'b', function (err) {
     t.error(err, 'no error')
-    db.put('/hello', 'a', function (err) {
+    db.put('hello', 'a', function (err) {
       t.error(err, 'no error')
-      db.put('/hello/verden', 'c', function (err) {
+      db.put('hello/verden', 'c', function (err) {
         t.error(err, 'no error')
-        db.put('/hello', 'd', function (err) {
+        db.put('hello', 'd', function (err) {
           t.error(err, 'no error')
-          db.get('/hello', function (err, node) {
+          db.get('hello', function (err, node) {
             t.error(err, 'no error')
-            t.same(node.key, '/hello')
-            t.same(node.value, 'd')
+            t.same(node.key, 'hello', 'same key')
+            t.same(node.value, 'd', 'same value')
           })
-          db.get('/hello/world', function (err, node) {
+          db.get('hello/world', function (err, node) {
             t.error(err, 'no error')
-            t.same(node.key, '/hello/world')
-            t.same(node.value, 'b')
+            t.same(node.key, 'hello/world', 'same key')
+            t.same(node.value, 'b', 'same value')
           })
-          db.get('/hello/verden', function (err, node) {
+          db.get('hello/verden', function (err, node) {
             t.error(err, 'no error')
-            t.same(node.key, '/hello/verden')
-            t.same(node.value, 'c')
+            t.same(node.key, 'hello/verden', 'same key')
+            t.same(node.value, 'c', 'same value')
           })
         })
       })
@@ -199,8 +225,8 @@ tape('insert 100 values and get them all', function (t) {
   function same (key) {
     return function (err, node) {
       t.error(err, 'no error')
-      t.same(node.key, key)
-      t.same(node.value, key)
+      t.same(node.key, key, 'same key')
+      t.same(node.value, key, 'same value')
     }
   }
 })
@@ -222,93 +248,29 @@ tape('race works', function (t) {
   function same (val) {
     db.get(val, function (err, node) {
       t.error(err, 'no error')
-      t.same(node.key, val)
-      t.same(node.value, val)
+      t.same(node.key, val, 'same key')
+      t.same(node.value, val, 'same value')
     })
   }
 })
 
-tape('batch', function (t) {
-  t.plan(19)
-
+tape('version', function (t) {
   var db = create.one()
 
-  db.batch([{
-    type: 'put',
-    key: 'foo',
-    value: 'foo'
-  }, {
-    type: 'put',
-    key: 'bar',
-    value: 'bar'
-  }], function (err, nodes) {
-    t.error(err)
-    t.same(2, nodes.length)
-    same('foo', 'foo')
-    same('bar', 'bar')
-    db.batch([{
-      type: 'put',
-      key: 'foo',
-      value: 'foo2'
-    }, {
-      type: 'put',
-      key: 'bar',
-      value: 'bar2'
-    }, {
-      type: 'put',
-      key: 'baz',
-      value: 'baz'
-    }], function (err, nodes) {
-      t.error(err)
-      t.same(3, nodes.length)
-      same('foo', 'foo2')
-      same('bar', 'bar2')
-      same('baz', 'baz')
-    })
-  })
-
-  function same (key, val) {
-    db.get(key, function (err, node) {
-      t.error(err, 'no error')
-      t.same(node.key, key)
-      t.same(node.value, val)
-    })
-  }
-})
-
-tape('createWriteStream', function (t) {
-  t.plan(10)
-  var db = create.one()
-  var writer = db.createWriteStream()
-
-  writer.write([{
-    type: 'put',
-    key: 'foo',
-    value: 'foo'
-  }, {
-    type: 'put',
-    key: 'bar',
-    value: 'bar'
-  }])
-
-  writer.write({
-    type: 'put',
-    key: 'baz',
-    value: 'baz'
-  })
-
-  writer.end(function (err) {
+  db.version(function (err, version) {
     t.error(err, 'no error')
-    same('foo', 'foo')
-    same('bar', 'bar')
-    same('baz', 'baz')
-  })
-
-  function same (key, val) {
-    db.get(key, function (err, node) {
-      t.error(err, 'no error')
-      t.same(node.key, key)
-      t.same(node.value, val)
+    t.same(version, Buffer.alloc(0))
+    db.put('hello', 'world', function () {
+      db.version(function (err, version) {
+        t.error(err, 'no error')
+        db.put('hello', 'verden', function () {
+          db.checkout(version).get('hello', function (err, node) {
+            t.error(err, 'no error')
+            t.same(node.value, 'world')
+            t.end()
+          })
+        })
+      })
     })
-  }
+  })
 })
