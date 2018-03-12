@@ -5,8 +5,10 @@ var replicate = require('./helpers/replicate')
 tape('basic watch', function (t) {
   var db = create.one()
 
-  db.watch(function () {
+  db.watch(function (node) {
     t.pass('watch triggered')
+    t.ok(node.key === 'hello')
+    t.ok(node.value === 'world')
     t.end()
   })
 
