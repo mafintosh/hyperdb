@@ -40,11 +40,14 @@ function HyperDB (storage, key, opts) {
   this.discoveryKey = this.key ? hypercore.discoveryKey(this.key) : null
   this.source = checkout ? checkout.source : null
   this.local = checkout ? checkout.local : null
+  this.localContent = checkout ? checkout.localContent : null
   this.feeds = checkout ? checkout.feeds : []
+  this.contentFeeds = checkout ? checkout.contentFeeds : (opts.contentFeed ? [] : null)
   this.ready = thunky(this._ready.bind(this))
   this.opened = false
 
   this._storage = createStorage(storage)
+  this._contentStorage = opts.contentFeed ? this._storage : null
   this._writers = checkout ? checkout._writers : []
   this._watching = checkout ? checkout._watching : []
   this._replicating = []
@@ -306,7 +309,7 @@ HyperDB.prototype._writer = function (dir, key) {
 
 HyperDB.prototype._addWriter = function (key, cb) {
   var self = this
-  var writer = this._writer('peers/' + key.toString('hex'), key)
+  var writer = this._writer('peers/' + hypercore.discoveryKey(key).toString('hex'), key)
 
   writer._feed.ready(function (err) {
     if (err) return cb(err)
@@ -319,6 +322,7 @@ HyperDB.prototype._addWriter = function (key, cb) {
 HyperDB.prototype._pushWriter = function (writer) {
   writer._id = this._writers.push(writer) - 1
   this.feeds.push(writer._feed)
+  if (this.contentFeeds) this.contentFeeds.push(null)
 
   if (!this.opened) return
 
@@ -394,14 +398,21 @@ HyperDB.prototype._ready = function (cb) {
       if (err) return done(err)
 
       self._localWriter = self._writers[self.feeds.indexOf(self.local)]
-      self.opened = true
+      self._localWriter.head(function (err) {
+        if (err) return done(err)
+        if (!self._contentStorage || self._localWriter._contentFeed) return done(null)
 
-      self._localWriter.head(done)
+        self._localWriter._ensureContentFeed(null)
+        self.localContent = self._localWriter._contentFeed
+
+        done(null)
+      })
     })
   })
 
   function done (err) {
     if (err) return cb(err)
+    self.opened = true
     self.emit('ready')
     cb(null)
   }
@@ -456,6 +467,7 @@ function Writer (db, feed) {
   this._id = 0
   this._db = db
   this._feed = feed
+  this._contentFeed = null
   this._feeds = 0
   this._feedsMessage = null
   this._feedsLoaded = 0
@@ -588,7 +600,24 @@ Writer.prototype._addWriters = function (head, cb) {
   }
 }
 
+Writer.prototype._ensureContentFeed = function (key) {
+  if (this._contentFeed) return
+
+  var self = this
+
+  this._contentFeed = hypercore(storage, key)
+  if (this._db.contentFeeds) this._db.contentFeeds[this._id] = this._contentFeed
+
+  function storage (name) {
+    return self._db._contentStorage('content/' + self._feed.discoveryKey.toString('hex') + '/' + name)
+  }
+}
+
 Writer.prototype._updateFeeds = function () {
+  if (this._feedsMessage.contentFeed && this._db.contentFeeds && !this._contentFeed) {
+    this._ensureContentFeed(this._feedsMessage.contentFeed)
+  }
+
   var writers = this._feedsMessage.feeds || []
   var map = new Map()
   var i
@@ -675,7 +704,7 @@ function noop () {}
 
 function inspect () {
   return `Node(key=${this.key}` +
-    `, value=${this.value}` +
+    `, value=${util.inspect(this.value)}` +
     `, seq=${this.seq}` +
     `, feed=${this.feed})` +
     `)`
