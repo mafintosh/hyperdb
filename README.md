@@ -83,13 +83,14 @@ Checkout the db at an older version. The checkout is a DB instance as well.
 
 Insert a new value. Will merge any previous values seen for this key.
 
-`callback`'s parameters are `err, node`, where `node` is the newly inserted
-node for this key.
-
 #### `db.get(key, callback)`
 
 Lookup a string `key`. Returns a nodes array with the current values for this key.
 If there is no current conflicts for this key the array will only contain a single node.
+
+#### `db.del(key, callback)`
+
+Delete a string `key`.
 
 #### `db.local`
 
