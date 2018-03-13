@@ -28,7 +28,7 @@ tape('replicating content feeds', function (t) {
   db.put('hello', 'world', function () {
     var clone = create.one(db.key, {contentFeed: true})
     db.localContent.append('data', function () {
-      replicate(db, clone, function (err) {
+      replicate(db, clone, function () {
         clone.get('hello', function (err, node) {
           t.error(err, 'no error')
           t.same(node.value, 'world')
