@@ -200,15 +200,19 @@ HyperDB.prototype.replicate = function (opts) {
 
   var self = this
   var expectedFeeds = this._writers.length
-  var factor = opts.externalData ? 2 : 1
+  var factor = this.contentFeeds ? 2 : 1
 
   opts.expectedFeeds = expectedFeeds * factor
+
   if (!opts.stream) opts.stream = protocol(opts)
   var stream = opts.stream
 
   if (!opts.live) stream.on('prefinalize', prefinalize)
 
   this.ready(onready)
+
+  // bootstrap content feeds
+  if (this.contentFeeds && !this.contentFeeds[0]) this._writers[0].get(0, noop)
 
   return stream
 
@@ -217,6 +221,7 @@ HyperDB.prototype.replicate = function (opts) {
     if (stream.destroyed) return
 
     var i = 0
+    var j = 0
 
     self._replicating.push(replicate)
     stream.on('close', onclose)
@@ -226,6 +231,13 @@ HyperDB.prototype.replicate = function (opts) {
     function replicate () {
       for (; i < self.feeds.length; i++) {
         self.feeds[i].replicate(opts)
+      }
+
+      if (!self.contentFeeds) return
+
+      for (; j < self.contentFeeds.length; j++) {
+        if (!self.contentFeeds[j]) return
+        self.contentFeeds[j].replicate(opts)
       }
     }
 
@@ -489,6 +501,7 @@ Writer.prototype.append = function (entry, cb) {
   if (this._needsInflate()) {
     enc = messages.InflatedEntry
     entry.feeds = this._mapList(this._db.feeds, this._encodeMap, null)
+    if (this._db.contentFeeds) entry.contentFeed = this._db.contentFeeds[this._id].key
     this._feedsMessage = entry
     this._feedsLoaded = this._feeds = this._entry
     this._updateFeeds()
@@ -614,13 +627,17 @@ Writer.prototype._ensureContentFeed = function (key) {
 }
 
 Writer.prototype._updateFeeds = function () {
+  var i
+
   if (this._feedsMessage.contentFeed && this._db.contentFeeds && !this._contentFeed) {
     this._ensureContentFeed(this._feedsMessage.contentFeed)
+    for (i = 0; i < this._db._replicating.length; i++) {
+      this._db._replicating[i]()
+    }
   }
 
   var writers = this._feedsMessage.feeds || []
   var map = new Map()
-  var i
 
   for (i = 0; i < this._db.feeds.length; i++) {
     map.set(this._db.feeds[i].key.toString('hex'), i)

@@ -26,7 +26,8 @@
     "tape": "^4.9.0"
   },
   "scripts": {
-    "test": "standard && tape test/*.js"
+    "test": "standard && tape test/*.js",
+    "protobuf": "protocol-buffers schema.proto -o lib/messages.js"
   },
   "repository": {
     "type": "git",
