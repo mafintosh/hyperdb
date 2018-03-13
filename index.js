@@ -86,8 +86,8 @@ HyperDB.prototype.put = function (key, val, cb) {
       put(self, clock, heads, key, val, unlock)
     })
 
-    function unlock (err) {
-      release(cb, err)
+    function unlock (err, node) {
+      release(cb, err, node)
     }
   })
 }
@@ -498,23 +498,37 @@ Writer.prototype.append = function (entry, cb) {
 
   var enc = messages.Entry
   this._entry = this._clock++
+
   entry.clock[this._id] = this._clock
+  entry.seq = this._clock - 1
+  entry.feed = this._id
+  entry[util.inspect.custom] = inspect
+
+  var mapped = {
+    key: entry.key,
+    value: null,
+    inflate: 0,
+    clock: null,
+    trie: null,
+    feeds: null,
+    contentFeed: null
+  }
 
   if (this._needsInflate()) {
     enc = messages.InflatedEntry
-    entry.feeds = this._mapList(this._db.feeds, this._encodeMap, null)
-    if (this._db.contentFeeds) entry.contentFeed = this._db.contentFeeds[this._id].key
-    this._feedsMessage = entry
+    mapped.feeds = this._mapList(this._db.feeds, this._encodeMap, null)
+    if (this._db.contentFeeds) mapped.contentFeed = this._db.contentFeeds[this._id].key
+    this._feedsMessage = mapped
     this._feedsLoaded = this._feeds = this._entry
     this._updateFeeds()
   }
 
-  entry.clock = this._mapList(entry.clock, this._encodeMap, 0)
-  entry.inflate = this._feeds
-  entry.trie = trie.encode(entry.trie, this._encodeMap)
-  if (entry.value) entry.value = this._db._valueEncoding.encode(entry.value)
+  mapped.clock = this._mapList(entry.clock, this._encodeMap, 0)
+  mapped.inflate = this._feeds
+  mapped.trie = trie.encode(entry.trie, this._encodeMap)
+  if (entry.value) mapped.value = this._db._valueEncoding.encode(entry.value)
 
-  this._feed.append(enc.encode(entry), cb)
+  this._feed.append(enc.encode(mapped), cb)
 }
 
 Writer.prototype._needsInflate = function () {

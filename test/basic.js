@@ -3,7 +3,9 @@ var create = require('./helpers/create')
 
 tape('basic put/get', function (t) {
   var db = create.one()
-  db.put('hello', 'world', function (err) {
+  db.put('hello', 'world', function (err, node) {
+    t.same(node.key, 'hello')
+    t.same(node.value, 'world')
     t.error(err, 'no error')
     db.get('hello', function (err, node) {
       t.error(err, 'no error')
