@@ -45,6 +45,8 @@ function HyperDB (storage, key, opts) {
   this.contentFeeds = checkout ? checkout.contentFeeds : (opts.contentFeed ? [] : null)
   this.ready = thunky(this._ready.bind(this))
   this.opened = false
+  this.sparse = !!opts.sparse
+  this.sparseContent = opts.sparseContent !== undefined ? !!opts.sparseContent : this.sparse
 
   this._storage = createStorage(storage)
   this._contentStorage = opts.contentFeed ? this._storage : null
@@ -295,7 +297,7 @@ HyperDB.prototype._writer = function (dir, key) {
   if (writer) return writer
 
   var self = this
-  var feed = hypercore(storage, key)
+  var feed = hypercore(storage, key, {sparse: this.sparse})
 
   writer = new Writer(self, feed)
   feed.on('append', onappend)
@@ -618,7 +620,7 @@ Writer.prototype._ensureContentFeed = function (key) {
 
   var self = this
 
-  this._contentFeed = hypercore(storage, key)
+  this._contentFeed = hypercore(storage, key, {sparse: this._db.sparseContent})
   if (this._db.contentFeeds) this._db.contentFeeds[this._id] = this._contentFeed
 
   function storage (name) {
