@@ -276,3 +276,75 @@ tape('version', function (t) {
     })
   })
 })
+
+tape('basic batch', function (t) {
+  t.plan(1 + 3 + 3)
+
+  var db = create.one()
+
+  db.batch([
+    {key: 'hello', value: 'world'},
+    {key: 'hej', value: 'verden'},
+    {key: 'hello', value: 'welt'}
+  ], function (err) {
+    t.error(err, 'no error')
+    db.get('hello', function (err, node) {
+      t.error(err, 'no error')
+      t.same(node.key, 'hello')
+      t.same(node.value, 'welt')
+    })
+    db.get('hej', function (err, node) {
+      t.error(err, 'no error')
+      t.same(node.key, 'hej')
+      t.same(node.value, 'verden')
+    })
+  })
+})
+
+tape('multiple batches', function (t) {
+  t.plan(19)
+
+  var db = create.one()
+
+  db.batch([{
+    type: 'put',
+    key: 'foo',
+    value: 'foo'
+  }, {
+    type: 'put',
+    key: 'bar',
+    value: 'bar'
+  }], function (err, nodes) {
+    t.error(err)
+    t.same(2, nodes.length)
+    same('foo', 'foo')
+    same('bar', 'bar')
+    db.batch([{
+      type: 'put',
+      key: 'foo',
+      value: 'foo2'
+    }, {
+      type: 'put',
+      key: 'bar',
+      value: 'bar2'
+    }, {
+      type: 'put',
+      key: 'baz',
+      value: 'baz'
+    }], function (err, nodes) {
+      t.error(err)
+      t.same(3, nodes.length)
+      same('foo', 'foo2')
+      same('bar', 'bar2')
+      same('baz', 'baz')
+    })
+  })
+
+  function same (key, val) {
+    db.get(key, function (err, node) {
+      t.error(err, 'no error')
+      t.same(node.key, key)
+      t.same(node.value, val)
+    })
+  }
+})

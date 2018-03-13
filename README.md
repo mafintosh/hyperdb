@@ -92,6 +92,20 @@ If there is no current conflicts for this key the array will only contain a sing
 
 Delete a string `key`.
 
+#### `db.batch(batch, [callback])`
+
+Insert a batch of values efficiently, in a single atomic transaction. A batch should be an array of objects that look like this:
+
+``` js
+{
+  type: 'put',
+  key: someKey,
+  value: someValue
+}
+```
+
+`callback`'s parameters are `err, nodes`, where `nodes` is an array of the batched nodes.
+
 #### `db.local`
 
 Your local writable feed. You have to get an owner of the hyperdb to authorize you to have your

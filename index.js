@@ -62,11 +62,58 @@ function HyperDB (storage, key, opts) {
   this._map = opts.map || null
   this._reduce = opts.reduce || null
   this._valueEncoding = codecs(opts.valueEncoding || 'binary')
+  this._batching = null
+  this._batchingNodes = null
 
   this.ready()
 }
 
 util.inherits(HyperDB, events.EventEmitter)
+
+HyperDB.prototype.batch = function (batch, cb) {
+  if (!cb) cb = noop
+
+  var self = this
+
+  this._lock(function (release) {
+    var clock = self._clock()
+
+    self._batching = []
+    self._batchingNodes = []
+
+    self.heads(function (err, heads) {
+      if (err) return cb(err)
+
+      var i = 0
+
+      loop(null)
+
+      function loop (err, node) {
+        if (err) return done(err)
+
+        if (node) {
+          node.path = hash(node.key, true)
+          heads = [node]
+        }
+
+        if (i === batch.length) {
+          self.local.append(self._batching, done)
+          return
+        }
+
+        var next = batch[i++]
+        put(self, clock, heads, next.key, next.value || null, loop)
+      }
+
+      function done (err) {
+        var nodes = self._batchingNodes
+        self._batching = null
+        self._batchingNodes = null
+        return release(cb, err, nodes)
+      }
+    })
+  })
+}
 
 HyperDB.prototype.put = function (key, val, cb) {
   if (!cb) cb = noop
@@ -270,11 +317,15 @@ HyperDB.prototype._clock = function () {
   return clock
 }
 
-HyperDB.prototype._getPointer = function (feed, index, cb) {
+HyperDB.prototype._getPointer = function (feed, index, isPut, cb) {
+  if (isPut && this._batching && feed === this._localWriter._id && index >= this._localWriter._feed.length) {
+    process.nextTick(cb, null, this._batchingNodes[index - this._localWriter._feed.length])
+    return
+  }
   this._writers[feed].get(index, cb)
 }
 
-HyperDB.prototype._getAllPointers = function (list, cb) {
+HyperDB.prototype._getAllPointers = function (list, isPut, cb) {
   var error = null
   var result = new Array(list.length)
   var missing = result.length
@@ -282,7 +333,7 @@ HyperDB.prototype._getAllPointers = function (list, cb) {
   if (!missing) return process.nextTick(cb, null, result)
 
   for (var i = 0; i < result.length; i++) {
-    this._getPointer(list[i].feed, list[i].seq, done)
+    this._getPointer(list[i].feed, list[i].seq, isPut, done)
   }
 
   function done (err, node) {
@@ -527,6 +578,12 @@ Writer.prototype.append = function (entry, cb) {
   mapped.inflate = this._feeds
   mapped.trie = trie.encode(entry.trie, this._encodeMap)
   if (entry.value) mapped.value = this._db._valueEncoding.encode(entry.value)
+
+  if (this._db._batching) {
+    this._db._batching.push(enc.encode(mapped))
+    this._db._batchingNodes.push(entry)
+    return cb(null)
+  }
 
   this._feed.append(enc.encode(mapped), cb)
 }
