@@ -13,7 +13,7 @@ var events = require('events')
 var hash = require('./lib/hash')
 var iterator = require('./lib/iterator')
 var differ = require('./lib/differ')
-var changes = require('./lib/changes')
+var history = require('./lib/history')
 var get = require('./lib/get')
 var put = require('./lib/put')
 var messages = require('./lib/messages')
@@ -362,8 +362,8 @@ HyperDB.prototype.list = function (prefix, opts, cb) {
   }
 }
 
-HyperDB.prototype.changes = function () {
-  return changes(this)
+HyperDB.prototype.history = function () {
+  return history(this)
 }
 
 HyperDB.prototype.diff = function (other, prefix, opts) {
@@ -376,8 +376,8 @@ HyperDB.prototype.iterator = function (prefix, opts) {
   return iterator(this, normalizeKey(prefix || ''), opts)
 }
 
-HyperDB.prototype.createChangesStream = function () {
-  return toStream(this.changes())
+HyperDB.prototype.createHistoryStream = function () {
+  return toStream(this.history())
 }
 
 HyperDB.prototype.createDiffStream = function (other, prefix, opts) {

@@ -7,7 +7,7 @@ tape('empty history', function (t) {
   var db = create.one()
   var expected = []
 
-  var rs = db.createChangesStream()
+  var rs = db.createHistoryStream()
   collect(rs, function (err, actual) {
     t.error(err, 'no error')
     t.deepEqual(actual, expected, 'diff as expected')
@@ -20,7 +20,7 @@ tape('single value', function (t) {
 
   db.put('a', '2', function (err) {
     t.error(err, 'no error')
-    var rs = db.createChangesStream()
+    var rs = db.createHistoryStream()
     collect(rs, function (err, actual) {
       t.error(err, 'no error')
       t.equals(actual.length, 1)
@@ -38,7 +38,7 @@ tape('multiple values', function (t) {
     t.error(err, 'no error')
     db.put('b/0', 'boop', function (err) {
       t.error(err, 'no error')
-      var rs = db.createChangesStream()
+      var rs = db.createHistoryStream()
       collect(rs, function (err, actual) {
         t.error(err, 'no error')
         t.equals(actual.length, 2)
@@ -59,7 +59,7 @@ tape('multiple values: same key', function (t) {
     t.error(err, 'no error')
     db.put('a', 'boop', function (err) {
       t.error(err, 'no error')
-      var rs = db.createChangesStream()
+      var rs = db.createHistoryStream()
       collect(rs, function (err, actual) {
         t.error(err, 'no error')
         t.equals(actual.length, 2)
@@ -73,8 +73,7 @@ tape('multiple values: same key', function (t) {
   })
 })
 
-// skipping cause this expects the feed msg ...
-tape.skip('2 feeds', function (t) {
+tape('2 feeds', function (t) {
   create.two(function (a, b) {
     a.put('a', 'a', function () {
       b.put('b', '12', function () {
@@ -83,13 +82,19 @@ tape.skip('2 feeds', function (t) {
     })
 
     function validate () {
-      var rs = b.createChangesStream()
+      var rs = b.createHistoryStream()
+      var bi = b.feeds.indexOf(b.local)
+      var ai = bi === 0 ? 1 : 0
+
       collect(rs, function (err, actual) {
         t.error(err, 'no error')
         t.equals(actual.length, 3)
-        t.equals(actual[0].feed + ',' + actual[0].seq, '0,0')
-        t.equals(actual[1].feed + ',' + actual[1].seq, '1,0')
-        t.equals(actual[2].feed + ',' + actual[2].seq, '0,1')
+        t.equals(actual[0].feed, ai)
+        t.equals(actual[0].seq, 0)
+        t.equals(actual[1].feed, ai)
+        t.equals(actual[1].seq, 1)
+        t.equals(actual[2].feed, bi)
+        t.equals(actual[2].seq, 0)
         t.end()
       })
     }
