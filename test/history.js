@@ -100,3 +100,31 @@ tape('2 feeds', function (t) {
     }
   })
 })
+
+tape('reverse', function (t) {
+  create.two(function (a, b) {
+    a.put('a', 'a', function () {
+      b.put('b', '12', function () {
+        replicate(a, b, validate)
+      })
+    })
+
+    function validate () {
+      var rs = b.createHistoryStream({reverse: true})
+      var bi = b.feeds.indexOf(b.local)
+      var ai = bi === 0 ? 1 : 0
+
+      collect(rs, function (err, actual) {
+        t.error(err, 'no error')
+        t.equals(actual.length, 3)
+        t.equals(actual[0].feed, bi)
+        t.equals(actual[0].seq, 0)
+        t.equals(actual[1].feed, ai)
+        t.equals(actual[1].seq, 1)
+        t.equals(actual[2].feed, ai)
+        t.equals(actual[2].seq, 0)
+        t.end()
+      })
+    }
+  })
+})
