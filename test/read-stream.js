@@ -19,7 +19,7 @@ tape('basic readStream', { timeout: 1000 }, function (t) {
 
   function validate (err) {
     t.error(err, 'no error')
-    var reader = db.createReadStream('foo/')
+    var reader = db.createReadStream('foo/', {gt: true})
     reader.on('data', (data) => {
       var index = expected.indexOf(data.key)
       t.ok(index !== -1, 'key is expected')

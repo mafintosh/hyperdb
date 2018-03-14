@@ -341,7 +341,7 @@ tape('list buffers an iterator', function (t) {
     db.list(function (err, all) {
       t.error(err, 'no error')
       t.same(all.map(v => v.key).sort(), ['a', 'b', 'b/c'])
-      db.list('b', function (err, all) {
+      db.list('b', {gt: true}, function (err, all) {
         t.error(err, 'no error')
         t.same(all.length, 1)
         t.same(all[0].key, 'b/c')
