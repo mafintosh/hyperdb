@@ -78,6 +78,8 @@ Get the current version identifier as a buffer for the db.
 #### `var checkout = db.checkout(version)`
 
 Checkout the db at an older version. The checkout is a DB instance as well.
+Version should be a version identifier returned by the `db.version` api or an
+array of nodes returned from `db.heads`.
 
 #### `db.put(key, value, [callback])`
 

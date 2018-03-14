@@ -56,7 +56,7 @@ function HyperDB (storage, key, opts) {
   this._replicating = []
   this._localWriter = null
   this._byKey = new Map()
-  this._heads = null
+  this._heads = opts.heads || null
   this._version = opts.version || null
   this._checkout = checkout || null
   this._lock = mutexify()
@@ -179,11 +179,18 @@ HyperDB.prototype.version = function (cb) {
 
 HyperDB.prototype.checkout = function (version, opts) {
   if (!opts) opts = {}
+
+  if (Array.isArray(version)) {
+    opts.heads = version
+    version = null
+  }
+
   return new HyperDB(this._storage, this.key, {
     checkout: this,
     version: version,
     map: opts.map !== undefined ? opts.map : this._map,
-    reduce: opts.reduce !== undefined ? opts.reduce : this._reduce
+    reduce: opts.reduce !== undefined ? opts.reduce : this._reduce,
+    heads: opts.heads
   })
 }
 
@@ -465,7 +472,8 @@ HyperDB.prototype._ready = function (cb) {
   var self = this
 
   if (this._checkout) {
-    if (this._version) this._checkout.heads(onversion)
+    if (this._heads) oncheckout(null, this._heads)
+    else if (this._version) this._checkout.heads(onversion)
     else this._checkout.heads(oncheckout)
     return
   }
