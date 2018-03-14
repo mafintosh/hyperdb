@@ -33,7 +33,7 @@ function HyperDB (storage, key, opts) {
   }
 
   if (!opts) opts = {}
-  if (opts.one) opts.reduce = reduceFirst
+  if (opts.firstNode) opts.reduce = reduceFirst
 
   var checkout = opts.checkout
 

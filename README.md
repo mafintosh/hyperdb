@@ -61,7 +61,7 @@ Options include:
 {
   map: node => mappedNode, // map nodes before returning them
   reduce: (a, b) => someNode, // reduce the nodes array before returning it
-  one: false, // set to true to reduce the array to a single node
+  firstNode: false, // set to true to reduce the nodes array to the first node in it
   valueEncoding: 'binary' // set the value encoding of the db
 }
 ```
