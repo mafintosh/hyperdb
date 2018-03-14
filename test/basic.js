@@ -406,9 +406,9 @@ tape('createWriteStream pipe', function (t) {
   reader.pipe(writer)
   writer.on('finish', function (err) {
     t.error(err, 'no error')
-    same('foo1', 1)
-    same('foo50', 50)
-    same('foo999', 999)
+    same('foo1', '1')
+    same('foo50', '50')
+    same('foo999', '999')
   })
 
   function same (key, val) {

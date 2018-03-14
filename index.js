@@ -9,6 +9,7 @@ var codecs = require('codecs')
 var raf = require('random-access-file')
 var path = require('path')
 var util = require('util')
+var bulk = require('bulk-write-stream')
 var events = require('events')
 var hash = require('./lib/hash')
 var iterator = require('./lib/iterator')
@@ -438,6 +439,26 @@ HyperDB.prototype.createDiffStream = function (other, prefix, opts) {
 
 HyperDB.prototype.createReadStream = function (prefix, opts) {
   return toStream(this.iterator(prefix, opts))
+}
+
+HyperDB.prototype.createWriteStream = function (cb) {
+  var self = this
+  return bulk.obj(write)
+
+  function write (batch, cb) {
+    var flattened = []
+    for (var i = 0; i < batch.length; i++) {
+      var content = batch[i]
+      if (Array.isArray(content)) {
+        for (var j = 0; j < content.length; j++) {
+          flattened.push(content[j])
+        }
+      } else {
+        flattened.push(content)
+      }
+    }
+    self.batch(flattened, cb)
+  }
 }
 
 HyperDB.prototype._ready = function (cb) {
