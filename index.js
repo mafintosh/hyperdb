@@ -226,7 +226,7 @@ HyperDB.prototype._index = function (key) {
   return -1
 }
 
-HyperDB.prototype.authenticated = function (key) {
+HyperDB.prototype.authorized = function (key) {
   return this._index(key) > -1
 }
 
@@ -378,7 +378,7 @@ HyperDB.prototype._addWriter = function (key, cb) {
 
   writer._feed.ready(function (err) {
     if (err) return cb(err)
-    if (self.authenticated(key)) return cb(null)
+    if (self.authorized(key)) return cb(null)
     self._pushWriter(writer)
     cb(null)
   })
