@@ -1,0 +1,21 @@
+message Entry {
+  required string key = 1;
+  optional bytes value = 2;
+  required bytes trie = 3;
+  repeated uint64 clock = 4;
+  optional uint64 inflate = 5;
+}
+
+message InflatedEntry {
+  message Feed {
+    required bytes key = 1;
+  }
+
+  required string key = 1;
+  optional bytes value = 2;
+  required bytes trie = 3;
+  repeated uint64 clock = 4;
+  optional uint64 inflate = 5;
+  repeated Feed feeds = 6;
+  optional bytes contentFeed = 7;
+}

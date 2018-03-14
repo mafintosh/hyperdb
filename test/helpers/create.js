@@ -1,49 +1,55 @@
-var hyperdb = require('../..')
+var hyperdb = require('../../')
 var ram = require('random-access-memory')
+var replicate = require('./replicate')
+var reduce = (a, b) => a
 
-module.exports = create
-
-create.one = createOne
-create.two = createTwo
-create.three = createThree
-
-function createOne (key) {
-  return hyperdb(ram, key, {reduce: reduce, valueEncoding: 'json'})
+exports.one = function (key, opts) {
+  if (!opts) opts = {}
+  opts.reduce = reduce
+  opts.valueEncoding = opts.valueEncoding || 'utf-8'
+  return hyperdb(ram, key, opts)
 }
 
-function createTwo (cb) {
-  var a = hyperdb(ram, {valueEncoding: 'json'})
+exports.two = function (cb) {
+  var a = hyperdb(ram, {valueEncoding: 'utf-8'})
   a.ready(function () {
-    var b = hyperdb(ram, a.key, {valueEncoding: 'json'})
+    var b = hyperdb(ram, a.key, {valueEncoding: 'utf-8'})
     b.ready(function () {
       a.authorize(b.local.key, function () {
-        cb(a, b)
-      })
-    })
-  })
-}
-
-function createThree (cb) {
-  var a = hyperdb(ram, {valueEncoding: 'json'})
-  a.ready(function () {
-    var b = hyperdb(ram, a.key, {valueEncoding: 'json'})
-    b.ready(function () {
-      var c = hyperdb(ram, a.key, {valueEncoding: 'json'})
-      c.ready(function () {
-        a.authorize(b.local.key, function () {
-          b.authorize(c.local.key, function () {
-            cb(a, b, c)
-          })
+        replicate(a, b, function () {
+          cb(a, b, replicate.bind(null, a, b))
         })
       })
     })
   })
 }
 
-function create (id) {
-  return hyperdb(ram, {id: id, valueEncoding: 'json'})
-}
+exports.three = function (cb) {
+  var a = hyperdb(ram, {valueEncoding: 'utf-8'})
 
-function reduce (a, b) {
-  return a
+  a.ready(function () {
+    var b = hyperdb(ram, a.key, {valueEncoding: 'utf-8'})
+    var c = hyperdb(ram, a.key, {valueEncoding: 'utf-8'})
+
+    b.ready(function () {
+      c.ready(function () {
+        a.authorize(b.local.key)
+        a.authorize(c.local.key, function () {
+          replicateAll(function () {
+            cb(a, b, c, replicateAll)
+          })
+        })
+      })
+    })
+
+    function replicateAll (cb) {
+      replicate(a, b, function (err) {
+        if (err) return cb(err)
+        replicate(b, c, function (err) {
+          if (err) return cb(err)
+          replicate(a, c, cb)
+        })
+      })
+    }
+  })
 }

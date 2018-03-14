@@ -1,304 +1,244 @@
-var replicate = require('./helpers/replicate')
-var create = require('./helpers/create')
 var tape = require('tape')
+var create = require('./helpers/create')
+var run = require('./helpers/run')
+var replicate = require('./helpers/replicate')
 
-var hyperdb = require('..')
-var ram = require('random-access-memory')
+tape('two writers, no conflicts, many values', function (t) {
+  t.plan(1 + 3 * 4)
 
-tape('basic replication', function (t) {
-  t.plan(6)
+  create.two(function (db1, db2, replicate) {
+    var r = []
+    for (var i = 0; i < 1000; i++) r.push('i' + i)
 
-  create.two(function (a, b) {
-    a.put('/a', 'a', function () {
-      replicate(a, b, validate)
-    })
+    run(
+      cb => db1.put('0', '0', cb),
+      cb => replicate(cb),
+      cb => db2.put('a', 'a', cb),
+      cb => replicate(cb),
+      cb => db2.put('2', '2', cb),
+      cb => db2.put('3', '3', cb),
+      cb => db2.put('4', '4', cb),
+      cb => db2.put('5', '5', cb),
+      cb => db2.put('6', '6', cb),
+      cb => db2.put('7', '7', cb),
+      cb => db2.put('8', '8', cb),
+      cb => db2.put('9', '9', cb),
+      cb => replicate(cb),
+      cb => db1.put('b', 'b', cb),
+      cb => db2.put('c', 'c', cb),
+      cb => replicate(cb),
+      cb => db2.put('d', 'd', cb),
+      cb => replicate(cb),
+      r.map(i => cb => db1.put(i, i, cb)),
+      done
+    )
 
-    function validate () {
-      b.get('/a', function (err, nodes) {
-        t.error(err, 'no error')
-        t.same(nodes[0].key, '/a')
-        t.same(nodes[0].value, 'a')
-      })
+    function done (err) {
+      t.error(err, 'no error')
+      db2.get('a', expect('a'))
+      db1.get('0', expect('0'))
+      db1.get('i424', expect('i424'))
 
-      b.get('/a', function (err, nodes) {
-        t.error(err, 'no error')
-        t.same(nodes[0].key, '/a')
-        t.same(nodes[0].value, 'a')
-      })
+      function expect (v) {
+        return function (err, nodes) {
+          t.error(err, 'no error')
+          t.same(nodes.length, 1)
+          t.same(nodes[0].key, v)
+          t.same(nodes[0].value, v)
+        }
+      }
     }
   })
 })
 
-tape('2 peers, fork', function (t) {
-  t.plan(20)
+tape('two writers, one conflict', function (t) {
+  t.plan(1 + 4 * 2 + 6 * 2)
+  create.two(function (db1, db2, replicate) {
+    run(
+      cb => db1.put('a', 'a', cb),
+      cb => replicate(cb),
+      cb => db1.put('b', 'b', cb),
+      cb => db2.put('b', 'B', cb),
+      cb => replicate(cb),
+      cb => db1.put('a', 'A', cb),
+      cb => replicate(cb),
+      done
+    )
 
-  create.two(function (a, b) {
-    a.put('/root', 'root', function () {
-      replicate(a, b, function () {
-        a.put('/key', 'a', function () {
-          b.put('/key', 'b', function () {
-            replicate(a, b, validate)
-          })
-        })
-      })
-    })
+    function done (err) {
+      t.error(err, 'no error')
 
-    function validate () {
-      a.get('/root', ongetroot)
-      b.get('/root', ongetroot)
-      a.get('/key', ongetkey)
-      b.get('/key', ongetkey)
+      db1.get('a', ona)
+      db2.get('a', ona)
+      db1.get('b', onb)
+      db2.get('b', onb)
 
-      function ongetroot (err, nodes) {
+      function onb (err, nodes) {
         t.error(err, 'no error')
-        t.same(nodes.length, 1)
-        t.same(nodes[0].key, '/root')
-        t.same(nodes[0].value, 'root')
-      }
-
-      function ongetkey (err, nodes) {
-        t.error(err, 'no error')
-        nodes.sort(sort)
+        nodes.sort((a, b) => a.value.localeCompare(b.value))
         t.same(nodes.length, 2)
-        t.same(nodes[0].key, '/key')
-        t.same(nodes[0].value, 'a')
-        t.same(nodes[1].key, '/key')
-        t.same(nodes[1].value, 'b')
+        t.same(nodes[0].key, 'b')
+        t.same(nodes[0].value, 'b')
+        t.same(nodes[1].key, 'b')
+        t.same(nodes[1].value, 'B')
       }
-    }
-  })
-})
-
-tape('2 peers, fork and non-merge write', function (t) {
-  t.plan(20)
-
-  create.two(function (a, b) {
-    a.put('/root', 'root', function () {
-      replicate(a, b, function () {
-        a.put('/key', 'a', function () {
-          b.put('/key', 'b', function () {
-            replicate(a, b, function () {
-              a.put('/root', 'new root', function () {
-                replicate(a, b, validate)
-              })
-            })
-          })
-        })
-      })
-    })
-
-    function validate () {
-      a.get('/root', ongetroot)
-      b.get('/root', ongetroot)
-      a.get('/key', ongetkey)
-      b.get('/key', ongetkey)
-
-      function ongetroot (err, nodes) {
-        t.error(err, 'no error')
-        t.same(nodes.length, 1)
-        t.same(nodes[0].key, '/root')
-        t.same(nodes[0].value, 'new root')
-      }
-
-      function ongetkey (err, nodes) {
-        t.error(err, 'no error')
-        nodes.sort(sort)
-        t.same(nodes.length, 2)
-        t.same(nodes[0].key, '/key')
-        t.same(nodes[0].value, 'a')
-        t.same(nodes[1].key, '/key')
-        t.same(nodes[1].value, 'b')
-      }
-    }
-  })
-})
-
-tape('2 peers, 1 reference old value', function (t) {
-  t.plan(24)
-
-  create.two(function (a, b) {
-    a.put('/a', 'old', function () {
-      replicate(a, b, function () {
-        a.put('/a', 'new', function () {
-          a.put('/foo', 'foo', function () {
-            b.put('/other', 'other', function () {
-              replicate(a, b, validate)
-            })
-          })
-        })
-      })
-    })
-
-    function validate () {
-      a.get('/a', ona)
-      a.get('/foo', onfoo)
-      a.get('/other', onother)
-      b.get('/a', ona)
-      b.get('/foo', onfoo)
-      b.get('/other', onother)
 
       function ona (err, nodes) {
         t.error(err, 'no error')
         t.same(nodes.length, 1)
-        t.same(nodes[0].key, '/a')
-        t.same(nodes[0].value, 'new')
-      }
-
-      function onfoo (err, nodes) {
-        t.error(err, 'no error')
-        t.same(nodes.length, 1)
-        t.same(nodes[0].key, '/foo')
-        t.same(nodes[0].value, 'foo')
-      }
-
-      function onother (err, nodes) {
-        t.error(err, 'no error')
-        t.same(nodes.length, 1)
-        t.same(nodes[0].key, '/other')
-        t.same(nodes[0].value, 'other')
+        t.same(nodes[0].key, 'a')
+        t.same(nodes[0].value, 'A')
       }
     }
   })
 })
 
-tape('2 peers, fork and merge write', function (t) {
-  t.plan(16)
+tape('two writers, fork', function (t) {
+  t.plan(4 * 2 + 1)
 
-  create.two(function (a, b) {
-    a.put('/root', 'root', function () {
-      replicate(a, b, function () {
-        a.put('/key', 'a', function () {
-          b.put('/key', 'b', function () {
-            replicate(a, b, function () {
-              a.put('/key', 'c', function () {
-                replicate(a, b, validate)
-              })
-            })
-          })
-        })
-      })
-    })
+  create.two(function (a, b, replicate) {
+    run(
+      cb => a.put('a', 'a', cb),
+      replicate,
+      cb => b.put('a', 'b', cb),
+      cb => a.put('b', 'c', cb),
+      replicate,
+      done
+    )
 
-    function validate () {
-      a.get('/root', ongetroot)
-      b.get('/root', ongetroot)
-      a.get('/key', ongetkey)
-      b.get('/key', ongetkey)
+    function done (err) {
+      t.error(err, 'no error')
+      a.get('a', ona)
+      b.get('a', ona)
+    }
 
-      function ongetroot (err, nodes) {
+    function ona (err, nodes) {
+      t.error(err, 'no error')
+      t.same(nodes.length, 1)
+      t.same(nodes[0].key, 'a')
+      t.same(nodes[0].value, 'b')
+    }
+  })
+})
+
+tape('three writers, two forks', function (t) {
+  t.plan(4 * 3 + 1)
+
+  create.three(function (a, b, c, replicateAll) {
+    run(
+      cb => a.put('a', 'a', cb),
+      replicateAll,
+      cb => b.put('a', 'ab', cb),
+      cb => a.put('some', 'some', cb),
+      cb => replicate(a, c, cb),
+      cb => c.put('c', 'c', cb),
+      replicateAll,
+      done
+    )
+
+    function done (err) {
+      t.error(err, 'no error')
+      a.get('a', ona)
+      b.get('a', ona)
+      c.get('a', ona)
+
+      function ona (err, nodes) {
         t.error(err, 'no error')
-        t.same(nodes.length, 1)
-        t.same(nodes[0].key, '/root')
-        t.same(nodes[0].value, 'root')
-      }
-
-      function ongetkey (err, nodes) {
-        t.error(err, 'no error')
-        t.same(nodes.length, 1)
-        t.same(nodes[0].key, '/key')
-        t.same(nodes[0].value, 'c')
+        t.same(nodes.length, 1, 'one node')
+        t.same(nodes[0].key, 'a')
+        t.same(nodes[0].value, 'ab')
       }
     }
   })
 })
 
-tape('3 peers', function (t) {
-  t.plan(12)
+tape('two writers, simple fork', function (t) {
+  t.plan(1 + 2 * (4 + 6) + 2 + 4)
+  create.two(function (db1, db2, replicate) {
+    run(
+      cb => db1.put('0', '0', cb),
+      replicate,
+      cb => db1.put('1', '1a', cb),
+      cb => db2.put('1', '1b', cb),
+      replicate,
+      cb => db1.put('2', '2', cb),
+      done
+    )
 
-  create.three(function (a, b, c) {
-    c.put('/test', 'test', function () {
-      replicateThree(a, b, c, function () {
-        a.get('/test', ontest)
-        b.get('/test', ontest)
-        c.get('/test', ontest)
+    function done (err) {
+      t.error(err, 'no error')
+      db1.get('0', on0)
+      db1.get('1', on1)
+      db1.get('2', on2db1)
+      db2.get('0', on0)
+      db2.get('1', on1)
+      db2.get('2', on2db2)
+    }
 
-        function ontest (err, nodes) {
-          t.error(err, 'no error')
-          t.same(nodes.length, 1)
-          t.same(nodes[0].key, '/test')
-          t.same(nodes[0].value, 'test')
-        }
-      })
-    })
+    function on0 (err, nodes) {
+      t.error(err, 'no error')
+      t.same(nodes.length, 1)
+      t.same(nodes[0].key, '0')
+      t.same(nodes[0].value, '0')
+    }
+
+    function on1 (err, nodes) {
+      t.error(err, 'no error')
+      t.same(nodes.length, 2)
+      nodes.sort((a, b) => a.value.localeCompare(b.value))
+      t.same(nodes[0].key, '1')
+      t.same(nodes[0].value, '1a')
+      t.same(nodes[1].key, '1')
+      t.same(nodes[1].value, '1b')
+    }
+
+    function on2db1 (err, nodes) {
+      t.error(err, 'no error')
+      t.same(nodes.length, 1)
+      t.same(nodes[0].key, '2')
+      t.same(nodes[0].value, '2')
+    }
+
+    function on2db2 (err, nodes) {
+      t.error(err, 'no error')
+      t.same(nodes.length, 0)
+    }
   })
 })
 
-tape('3 peers + fork', function (t) {
-  t.plan(18)
+tape('three writers, no conflicts, forks', function (t) {
+  t.plan(1 + 4 * 3)
 
-  create.three(function (a, b, c) {
-    a.put('/test', 'a', function () {
-      c.put('/test', 'c', function () {
-        replicateThree(a, b, c, function () {
-          a.get('/test', ontest)
-          b.get('/test', ontest)
-          c.get('/test', ontest)
+  create.three(function (a, b, c, replicateAll) {
+    run(
+      cb => c.put('a', 'ac', cb),
+      replicateAll,
+      cb => a.put('foo', 'bar', cb),
+      replicateAll,
+      cb => a.put('a', 'aa', cb),
+      cb => replicate(a, b, cb),
+      range(50).map(key => cb => b.put(key, key, cb)),
+      replicateAll,
+      range(5).map(key => cb => c.put(key, 'c' + key, cb)),
+      done
+    )
 
-          function ontest (err, nodes) {
-            nodes.sort(sort)
-            t.error(err, 'no error')
-            t.same(nodes.length, 2)
-            t.same(nodes[0].key, '/test')
-            t.same(nodes[0].value, 'a')
-            t.same(nodes[1].key, '/test')
-            t.same(nodes[1].value, 'c')
-          }
-        })
-      })
-    })
+    function done (err) {
+      t.error(err, 'no error')
+      a.get('a', ona)
+      b.get('a', ona)
+      c.get('a', ona)
+    }
+
+    function ona (err, nodes) {
+      t.error(err, 'no error')
+      t.same(nodes.length, 1)
+      t.same(nodes[0].key, 'a')
+      t.same(nodes[0].value, 'aa')
+    }
   })
 })
 
-tape('put before auth', function (t) {
-  t.plan(12)
-
-  var a = hyperdb(ram, {valueEncoding: 'json'})
-
-  a.ready(function () {
-    var b = hyperdb(ram, a.key, {valueEncoding: 'json'})
-
-    a.put('a', 'a', function () {
-      replicate(a, b, function () {
-        b.put('a', 'b', function () {
-          a.put('foo', 'bar', function () {
-            a.authorize(b.local.key, function () {
-              replicate(a, b, function () {
-                a.get('a', ona)
-                b.get('a', ona)
-                a.get('foo', onfoo)
-
-                function ona (err, nodes) {
-                  t.error(err, 'no error')
-                  t.same(nodes.length, 1)
-                  t.same(nodes[0].key, 'a')
-                  t.same(nodes[0].value, 'b')
-                }
-
-                function onfoo (err, nodes) {
-                  t.error(err, 'no error')
-                  t.same(nodes.length, 1)
-                  t.same(nodes[0].key, 'foo')
-                  t.same(nodes[0].value, 'bar')
-                }
-              })
-            })
-          })
-        })
-      })
-    })
-  })
-})
-
-function sort (a, b) {
-  return a.value.localeCompare(b.value)
-}
-
-function replicateThree (a, b, c, cb) {
-  replicate(b, c, function (err) {
-    if (err) return cb(err)
-    replicate(a, b, function (err) {
-      if (err) return cb(err)
-      replicate(b, c, cb)
-    })
-  })
+function range (n) {
+  return Array(n).join(',').split(',').map((_, i) => '' + i)
 }
