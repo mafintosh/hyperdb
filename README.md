@@ -157,6 +157,7 @@ Options include:
 {
   recursive: true // visit all subfolders.
                   // set to false to only visit the first node in each folder
+  gt: false       // visit only strictly nodes that are > than the prefix
 }
 ```
 
