@@ -61,6 +61,31 @@ tape('basic readStream (again)', { timeout: 1000 }, function (t) {
   }
 })
 
+tape('basic readStream (again)', { timeout: 1000 }, function (t) {
+  var db = create.one()
+  var vals = ['foo/a', 'foo/abc', 'foo/a/b']
+  var expected = ['foo/a', 'foo/a/b']
+  put(db, vals, validate)
+
+  function validate (err) {
+    t.error(err, 'no error')
+    var reader = db.createReadStream('foo/a')
+    reader.on('data', (data) => {
+      var index = expected.indexOf(data.key)
+      t.ok(index !== -1, 'key is expected')
+      if (index >= 0) expected.splice(index, 1)
+    })
+    reader.on('end', () => {
+      t.equals(expected.length, 0)
+      t.end()
+    })
+    reader.on('error', (err) => {
+      t.fail(err.message)
+      t.end()
+    })
+  }
+})
+
 tape('readStream with two feeds', { timeout: 1000 }, function (t) {
   create.two((a, b) => {
     var aValues = ['b/a', 'a/b/c', 'b/c', 'b/c/d'].map(toKeyValuePairs('A'))
