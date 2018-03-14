@@ -160,6 +160,12 @@ Options include:
 }
 ```
 
+#### `var stream = db.createWriteStream()`
+
+Create a writable stream.
+
+Where `stream.write(data)` accepts data as an object or an array of objects with the same form as `db.batch()`.
+
 #### `db.list(prefix[, options], callback)`
 
 Same as `createReadStream` but buffers the result to a list that is passed to the

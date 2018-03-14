@@ -1,5 +1,6 @@
 var tape = require('tape')
 var create = require('./helpers/create')
+var Readable = require('stream').Readable
 
 tape('basic put/get', function (t) {
   var db = create.one()
@@ -338,6 +339,76 @@ tape('multiple batches', function (t) {
       same('bar', 'bar2')
       same('baz', 'baz')
     })
+  })
+
+  function same (key, val) {
+    db.get(key, function (err, node) {
+      t.error(err, 'no error')
+      t.same(node.key, key)
+      t.same(node.value, val)
+    })
+  }
+})
+
+tape('createWriteStream', function (t) {
+  t.plan(10)
+  var db = create.one()
+  var writer = db.createWriteStream()
+
+  writer.write([{
+    type: 'put',
+    key: 'foo',
+    value: 'foo'
+  }, {
+    type: 'put',
+    key: 'bar',
+    value: 'bar'
+  }])
+
+  writer.write({
+    type: 'put',
+    key: 'baz',
+    value: 'baz'
+  })
+
+  writer.end(function (err) {
+    t.error(err, 'no error')
+    same('foo', 'foo')
+    same('bar', 'bar')
+    same('baz', 'baz')
+  })
+
+  function same (key, val) {
+    db.get(key, function (err, node) {
+      t.error(err, 'no error')
+      t.same(node.key, key)
+      t.same(node.value, val)
+    })
+  }
+})
+
+tape('createWriteStream pipe', function (t) {
+  t.plan(10)
+  var db = create.one()
+  var writer = db.createWriteStream()
+  var index = 0
+  var reader = new Readable({
+    objectMode: true,
+    read: function (size) {
+      var value = (index < 1000) ? {
+        type: 'put',
+        key: 'foo' + index,
+        value: index++
+      } : null
+      this.push(value)
+    }
+  })
+  reader.pipe(writer)
+  writer.on('finish', function (err) {
+    t.error(err, 'no error')
+    same('foo1', '1')
+    same('foo50', '50')
+    same('foo999', '999')
   })
 
   function same (key, val) {

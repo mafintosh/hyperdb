@@ -4,6 +4,7 @@
   "description": "Distributed scalable database",
   "main": "index.js",
   "dependencies": {
+    "bulk-write-stream": "^1.1.3",
     "codecs": "^1.2.1",
     "hypercore": "^6.12.3",
     "hypercore-protocol": "^6.6.0",
