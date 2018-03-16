@@ -498,8 +498,7 @@ HyperDB.prototype._ready = function (cb) {
 
         self._localWriter._ensureContentFeed(null)
         self.localContent = self._localWriter._contentFeed
-
-        done(null)
+        self.localContent.ready(done)
       })
     })
   })
