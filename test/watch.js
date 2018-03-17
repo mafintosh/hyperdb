@@ -31,6 +31,21 @@ tape('watch prefix', function (t) {
   })
 })
 
+tape('recursive watch', function (t) {
+  t.plan(20)
+
+  var i = 0
+  var db = create.one()
+
+  db.watch('foo', function () {
+    if (i === 20) return
+    t.pass('watch triggered')
+    db.put('foo', 'bar-' + (++i))
+  })
+
+  db.put('foo', 'bar')
+})
+
 tape('watch and stop watching', function (t) {
   var db = create.one()
   var once = true
