@@ -31,6 +31,22 @@ tape('watch prefix', function (t) {
   })
 })
 
+tape('watch and stop watching', function (t) {
+  var db = create.one()
+  var once = true
+
+  var w = db.watch('foo', function () {
+    t.ok(once)
+    once = false
+    w.destroy()
+    db.put('foo/bar/baz', 'qux', function () {
+      t.end()
+    })
+  })
+
+  db.put('foo/bar', 'baz')
+})
+
 tape('remote watch', function (t) {
   var db = create.one()
 
