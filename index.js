@@ -574,6 +574,7 @@ HyperDB.prototype._ready = function (cb) {
     self.opened = true
     self.source = self._checkout.source
     self.local = self._checkout.local
+    self.localContent = self._checkout.localContent
     self.key = self._checkout.key
     self.discoveryKey = self._checkout.discoveryKey
     self._heads = heads
