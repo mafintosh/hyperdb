@@ -524,6 +524,12 @@ HyperDB.prototype._ready = function (cb) {
     var nodes = []
     var error = null
 
+    if (typeof self._version === 'number') {
+      missing = 1
+      self._checkout._writers[0].get(self._version, onnode)
+      return
+    }
+
     while (offset < self._version.length) {
       missing++
       var key = self._version.slice(offset, offset + 32)
