@@ -21,7 +21,9 @@
     "varint": "^5.0.0"
   },
   "devDependencies": {
+    "nanobench": "^2.1.1",
     "random-access-memory": "^2.4.0",
+    "random-seed": "^0.3.0",
     "standard": "^10.0.3",
     "tape": "^4.8.0"
   },
