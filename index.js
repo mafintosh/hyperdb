@@ -20,6 +20,7 @@ var put = require('./lib/put')
 var messages = require('./lib/messages')
 var trie = require('./lib/trie-encoding')
 var watch = require('./lib/watch')
+var derive = require('./lib/derive')
 
 module.exports = HyperDB
 
@@ -745,8 +746,19 @@ Writer.prototype._ensureContentFeed = function (key) {
   if (this._contentFeed) return
 
   var self = this
+  var secretKey = null
 
-  this._contentFeed = hypercore(storage, key, {sparse: this._db.sparseContent})
+  if (!key) {
+    var pair = derive(this._db.local.secretKey)
+    secretKey = pair.secretKey
+    key = pair.publicKey
+  }
+
+  this._contentFeed = hypercore(storage, key, {
+    sparse: this._db.sparseContent,
+    secretKey
+  })
+
   if (this._db.contentFeeds) this._db.contentFeeds[this._id] = this._contentFeed
 
   function storage (name) {
