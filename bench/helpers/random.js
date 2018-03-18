@@ -5,24 +5,22 @@ function makeDefault (opts) {
   return Object.assign({
     seed: 1,
     valueSize: 10,
-    maxKeyLength: 20,
-    numKeys: 1e5,
-    minKey: 1,
-    maxKey: 1e4
+    keyLength: 5,
+    numKeys: 1e3
   }, opts)
 }
 
 module.exports.fullData = function (opts) {
   opts = makeDefault(opts)
-  console.log('OPTS:', opts)
   var rand = random.create(opts.seed)
   var data = []
   for (var i = 0; i < opts.numKeys; i++) {
-    data.push({
+    var val = {
       type: 'put',
-      key: String(rand.intBetween(opts.minKey, opts.maxKey)),
+      key: rand.string(opts.keyLength),
       value: rand.string(opts.valueSize)
-    })
+    }
+    data.push(val)
   }
   return data
 }
@@ -38,3 +36,5 @@ module.exports.streamingData = function (opts) {
     })
   })
 }
+
+function multiply (x, y) { return x * y }
