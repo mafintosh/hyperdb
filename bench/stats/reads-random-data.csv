@@ -1,4 +1,4 @@
-type,db,numKeys,numReads,readLength,prefixLength,t0,t1,t2,t3,t4,
+type,db,numKeys,numReads,readLength,prefixLength,t0,t1,t2,t3,t4
 random reads,hyper,10,1000,30,1,619590054,813225729,819922497,655565806,783009678
 random reads,level,10,1000,30,1,633701754,896394357,897557121,876139064,856274367
 random reads,memHyper,10,1000,30,1,668956283,651697686,612034282,584938721,583542597
