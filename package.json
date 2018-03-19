@@ -33,6 +33,7 @@
   },
   "scripts": {
     "test": "standard && tape test/*.js",
+    "bench": "node bench/*.js",
     "protobuf": "protocol-buffers schema.proto -o lib/messages.js"
   },
   "repository": {
