@@ -1,7 +1,7 @@
 var events = require('events')
 
 var lock = require('mutexify')
-var bench = require('nanobench')
+var bench = require('@andrewosh/nanobench')
 var inherits = require('inherits')
 
 var create = require('./create')
