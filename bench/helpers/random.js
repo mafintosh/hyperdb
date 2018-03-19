@@ -1,23 +1,18 @@
 var random = require('random-seed')
 var from = require('from2')
 
-function makeDefault (opts) {
-  return Object.assign({
-    seed: 1,
-    valueSize: 10,
-    keyLength: 5,
-    numKeys: 1e3
-  }, opts)
-}
+var rand = random.create('hello')
 
-module.exports.fullData = function (opts) {
+// 10 possible key characters.
+var STRING_CHARS = ['a','b','c','d','e','f','g','h','i','j']
+
+module.exports.data = function (opts) {
   opts = makeDefault(opts)
-  var rand = random.create(opts.seed)
   var data = []
   for (var i = 0; i < opts.numKeys; i++) {
     var val = {
       type: 'put',
-      key: rand.string(opts.keyLength),
+      key: randomString(5),
       value: rand.string(opts.valueSize)
     }
     data.push(val)
@@ -25,16 +20,22 @@ module.exports.fullData = function (opts) {
   return data
 }
 
-module.exports.streamingData = function (opts) {
-  opts = makeDefault(opts)
-  var rand = random.create(opts.seed)
-  return from.obj(function (size, next) {
-    next(null, {
-      type: 'put',
-      key: String(rand.intBetween(opts.minKey, opts.maxKey)),
-      value: rand.string(opts.valueSize)
-    })
-  })
+module.exports.string = randomString
+
+function randomString (length) {
+  var string = ''
+  for (var i = 0; i < length; i++) {
+    string += STRING_CHARS[rand.intBetween(0, STRING_CHARS.length - 1)]
+  }
+  return string
+}
+
+function makeDefault (opts) {
+  return Object.assign({
+    valueSize: 10,
+    keyLength: 5,
+    numKeys: 1e3
+  }, opts)
 }
 
 function multiply (x, y) { return x * y }
