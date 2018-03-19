@@ -6,7 +6,7 @@ var random = require('./helpers/random')
 var bench = require('./helpers/bench')
 
 var STATS_DIR = p.join(__dirname, 'stats')
-var TRIALS = 3
+var TRIALS = 5
 var WRITE_SPECS = [
   { numKeys: 1e1 },
   { numKeys: 1e2 },
