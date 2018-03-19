@@ -1,7 +1,6 @@
 var p = require('path')
 var fs = require('fs')
 var mkdirp = require('mkdirp')
-var random = require('random-seed')
 
 var random = require('./helpers/random')
 var bench = require('./helpers/bench')
@@ -13,7 +12,7 @@ var WRITE_SPECS = [
   { numKeys: 1e2 },
   { numKeys: 1e3 },
   { numKeys: 1e4 },
-  { numKeys: 1e5 },
+  { numKeys: 1e5 }
 ]
 var READ_SPECS = [
   { numKeys: 1e1, numReads: 1000, readLength: 30, prefixLength: 1 },
@@ -37,7 +36,7 @@ var writeStats = []
 var readStats = []
 
 function makeTag (spec) {
-  return Object.keys(spec).map(function (key) { return key + ': ' + spec[key]}).join(',') 
+  return Object.keys(spec).map(function (key) { return key + ': ' + spec[key] }).join(',')
 }
 
 function runner (specs, stats, tag, func) {
@@ -86,7 +85,7 @@ function benchSingleInsertions () {
     function _insert () {
       db.put(data[counter].key, data[counter].value, function (err) {
         if (err) throw err
-        if (counter ===  0) {
+        if (counter === 0) {
           b.end()
           b.done()
         } else {
@@ -121,7 +120,7 @@ function benchRandomReads () {
   })
 
   function _read (db, prefix, length, cb) {
-    var count = 0 
+    var count = 0
     var stream = db.createReadStream(prefix)
     stream.on('data', function (d) {
       if (count++ === length) {
@@ -136,8 +135,6 @@ function benchRandomReads () {
     })
   }
 }
-
-function multiply (x, y) { return x * y }
 
 function run () {
   benchBatchInsertions()
@@ -156,7 +153,7 @@ process.on('exit', function () {
       csv += 't' + i + ','
     }
     csv += '\n'
-    for (var i = 0; i < writeStats.length; i++) {
+    for (i = 0; i < writeStats.length; i++) {
       var stat = writeStats[i]
       var dbs = Object.keys(stat.timing)
       for (var j = 0; j < dbs.length; j++) {
@@ -176,13 +173,13 @@ process.on('exit', function () {
       csv += 't' + i + ','
     }
     csv += '\n'
-    for (var i = 0; i < readStats.length; i++) {
+    for (i = 0; i < readStats.length; i++) {
       var stat = readStats[i]
       var dbs = Object.keys(stat.timing)
       for (var j = 0; j < dbs.length; j++) {
         var db = dbs[j]
         csv += [stat.type, db, stat.spec.numKeys, stat.spec.numReads,
-                stat.spec.readLength, stat.spec.prefixLength].join(',') + ','
+          stat.spec.readLength, stat.spec.prefixLength].join(',') + ','
         csv += stat.timing[db].join(',')
         csv += '\n'
       }
