@@ -10,6 +10,11 @@ var _lock = lock()
 
 module.exports = Benchmarker
 
+// TODO: might just want to use process.nanotime
+function convertToNs (time) {
+  return 1e9 * time[0] + time[1]
+}
+
 function Benchmarker (tag, trials, cb) {
   if (!(this instanceof Benchmarker)) return new Benchmarker(tag, trials, cb)
   trials = trials || 1
@@ -31,7 +36,7 @@ function Benchmarker (tag, trials, cb) {
         bench(tag + ' with hyperdb', function (b) {
           var benchDone = _wrapDone(b.done)
           b.done = function () {
-            hyperTimes.push(b.time[1])
+            hyperTimes.push(convertToNs(b.time))
             benchDone()
           }
           return cb(b, hyperdb)
@@ -40,7 +45,7 @@ function Benchmarker (tag, trials, cb) {
         bench(tag + ' with leveldb', function (b) {
           var benchDone = _wrapDone(b.done)
           b.done = function () {
-            levelTimes.push(b.time[1])
+            levelTimes.push(convertToNs(b.time))
             benchDone()
             release()
           }
@@ -50,7 +55,7 @@ function Benchmarker (tag, trials, cb) {
         bench(tag + ' with hyperdb in memory', function (b) {
           var benchDone = _wrapDone(b.done)
           b.done = function () {
-            memHyperTimes.push(b.time[1])
+            memHyperTimes.push(convertToNs(b.time))
             benchDone()
             release()
           }
@@ -60,7 +65,7 @@ function Benchmarker (tag, trials, cb) {
         bench(tag + ' with leveldb in memory', function (b) {
           var benchDone = _wrapDone(b.done)
           b.done = function () {
-            memLevelTimes.push(b.time[1])
+            memLevelTimes.push(convertToNs(b.time))
             benchDone()
             release()
           }
