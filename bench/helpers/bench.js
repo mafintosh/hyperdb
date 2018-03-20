@@ -26,7 +26,7 @@ function Benchmarker (tag, trials, cb) {
   var memHyperTimes = []
   var memLevelTimes = []
 
-  var _remaining = trials * 2
+  var _remaining = trials * 4
 
   for (var i = 0; i < trials; i++) {
     _lock(function (release) {
