@@ -1,10 +1,9 @@
 var random = require('random-seed')
-var from = require('from2')
 
 var rand = random.create('hello')
 
 // 10 possible key characters.
-var STRING_CHARS = ['a','b','c','d','e','f','g','h','i','j']
+var STRING_CHARS = ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j']
 
 module.exports.data = function (opts) {
   opts = makeDefault(opts)
@@ -37,5 +36,3 @@ function makeDefault (opts) {
     numKeys: 1e3
   }, opts)
 }
-
-function multiply (x, y) { return x * y }
