@@ -35,7 +35,6 @@ tape('authorized writer passes "authorized" api', function (t) {
   })
 })
 
-
 tape('unauthorized writer fails "authorized" api', function (t) {
   var a = create.one()
   a.ready(function () {
