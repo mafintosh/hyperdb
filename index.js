@@ -181,6 +181,10 @@ HyperDB.prototype.version = function (cb) {
 HyperDB.prototype.checkout = function (version, opts) {
   if (!opts) opts = {}
 
+  if (typeof version === 'string') {
+    version = Buffer.from(version, 'hex')
+  }
+
   if (Array.isArray(version)) {
     opts.heads = version
     version = null
@@ -552,15 +556,19 @@ HyperDB.prototype._ready = function (cb) {
     }
 
     while (offset < self._version.length) {
-      missing++
       var key = self._version.slice(offset, offset + 32)
       var seq = varint.decode(self._version, offset + 32)
       offset += 32 + varint.decode.bytes
       var writer = self._checkout._byKey.get(key.toString('hex'))
+      if (!writer) {
+        error = new Error('Invalid version')
+        continue
+      }
+      missing++
       writer.get(seq, onnode)
     }
 
-    if (!missing) oncheckout(null, [])
+    if (!missing) oncheckout(error, [])
 
     function onnode (err, node) {
       if (err) error = err
