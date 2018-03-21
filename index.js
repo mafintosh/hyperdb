@@ -258,6 +258,10 @@ HyperDB.prototype.authorized = function (key, cb) {
     if (err) return cb(err)
     for (var i = 0; i < heads.length; i++) {
       var head = heads[i]
+
+      // skip self-written nodes
+      if (self.feeds[head.feed].key.equals(key)) continue
+
       for (var j = 0; j < head.clock.length; j++) {
         var feedKey = self.feeds[head.clock[j]].key
         if (feedKey.equals(key)) {

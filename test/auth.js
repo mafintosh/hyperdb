@@ -24,3 +24,20 @@ tape('unauthorized writer fails "authorized" api', function (t) {
     })
   })
 })
+
+tape('local unauthorized writes =/> authorized', function (t) {
+  var a = create.one()
+  a.ready(function () {
+    var b = create.one(a.key)
+    b.ready(function () {
+      b.put('/foo', 'bar', function (err) {
+        t.error(err)
+        b.authorized(b.local.key, function (err, auth) {
+          t.error(err)
+          t.equals(auth, false)
+          t.end()
+        })
+      })
+    })
+  })
+})
