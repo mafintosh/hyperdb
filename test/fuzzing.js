@@ -1,3 +1,5 @@
+var p = require('path')
+
 var tape = require('tape')
 var seed = require('seed-random')
 
@@ -8,7 +10,13 @@ var put = require('./helpers/put')
 var ALPHABET = ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j']
 
 run(
-  fuzzRunner,
+  cb => fuzzRunner({
+    keys: 20,
+    dirs: 2,
+    dirSize: 2,
+    conflicts: 0,
+    replications: 2
+  }, cb),
   function (err) {
     if (err) console.error('Fuzz testing errored:', err)
     else console.log('Fuzz testing completed with no error!')
@@ -36,11 +44,11 @@ function defaultOpts (opts) {
   return Object.assign({
     keys: 1000,
     writers: 1,
-    keyDepth: 1,
+    keyDepth: 2,
     dirs: 20,
     dirSize: 10,
     prefixSize: 2,
-    conflicts: 100,
+    conflicts: 0,
     replications: 10,
     valueSize: 20,
     seed: 'hello'
@@ -86,16 +94,19 @@ function generateData (opts) {
 
     var shouldPushDir = test(opts.dirs / opts.keys, random)
       && stack.length < opts.keyDepth
-    var shouldPopDir = test((opts.keys - opts.levelSize) / opts.keys, random)
+    var shouldPopDir = stack.length && test(1 / opts.dirSize, random)
     var shouldReplicate = test(opts.replications / opts.keys, random)
 
     if (shouldPushDir) stack.push(prefix)
     if (shouldPopDir) stack.pop()
 
-    if (!keysPerReplication[0]) keysPerReplication.unshift([])
+    var batchIdx = (!keysPerReplication.length) ? 0 : keysPerReplication.length - 1
 
-    keysPerReplication[0].push(stack.join('/') + prefix)
-    if (shouldReplicate) keysPerReplication.unshift([])
+    if (!keysPerReplication[batchIdx]) keysPerReplication.push([])
+
+    console.log('STACK:', stack)
+    keysPerReplication[batchIdx].push(p.relative('/', stack.join('/') + '/' + prefix))
+    if (shouldReplicate) keysPerReplication.push([])
   }
 
   // Generate the values for those keys (including possible conflicts).
@@ -129,14 +140,18 @@ function validate (db, processedBatches, cb) {
   // Assuming the batches are insertion order.
   for (var i = 0; i < processedBatches.length; i++) {
     var writeBatch = processedBatches[i]
+    console.log('writeBatch:', writeBatch)
     for (var j = 0; j < writeBatch.length; j++) {
-      var singleWrite = writeBatch[i]
+      var singleWrite = writeBatch[j]
+      console.log('singleWrite:', singleWrite)
       expectedWrites[singleWrite.key] = singleWrite.values.filter(_ => true)
     }
   }
   var allKeys = Object.keys(expectedWrites)
 
-  tape(['validating after', processedBatches.length, 'replications'].join(''), function (t) {
+  console.log('EXPECTED WRITES:', expectedWrites)
+
+  tape(['validating after', processedBatches.length, 'replications'].join(' '), function (t) {
     t.plan(allKeys.length + 1)
 
     var readStream = db.createReadStream('/')    
@@ -147,9 +162,10 @@ function validate (db, processedBatches, cb) {
     readStream.on('error', cb)
     readStream.on('data', function (nodes) {
       if (!nodes) return
+      console.log('IN DATA, node key:', nodes[0].key, 'node value:', nodes[0].value)
       var key = nodes[0].key
       var values = nodes.map(node => node.value)
-      t.same(expectedWrites[key], values)
+      t.same(values, expectedWrites[key])
       delete expectedWrites[key]
     })
   })
@@ -166,10 +182,10 @@ function fuzzRunner (opts, cb) {
         var singleWrite = batch[j]
         for (var z = 0; z < singleWrite.values.length; z++) {
           var db = dbs[z]
-          batchOps.push((function (k, v) { return cb => put(db, [{
+          batchOps.push((function (db, k, v) { return cb => put(db, [{
             key: k,
             value: v
-          }], cb) })(singleWrite.key, singleWrite.values[z]))
+          }], cb) })(db, singleWrite.key, singleWrite.values[z]))
         }
       }
       ops.push(batchOps)
@@ -177,7 +193,9 @@ function fuzzRunner (opts, cb) {
       ops.push([
         // Currently replicating between all databases at every replication point.
         cb => replicateByIndex(cb),
-        cb => validate(dbs[0], writesPerReplication.slice(0, i), cb)
+        (function (i) {
+          return cb => validate(dbs[0], writesPerReplication.slice(0, i + 1), cb)
+        })(i)
       ])
     }
 
