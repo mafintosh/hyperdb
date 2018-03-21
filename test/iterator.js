@@ -127,7 +127,6 @@ tape('two writers, simple fork', function (t) {
   t.plan(2 * 2 + 1)
 
   create.two(function (db1, db2, replicate) {
-    console.log('ARGUMENTS:', arguments)
     run(
       cb => db1.put('0', '0', cb),
       replicate,
