@@ -260,7 +260,7 @@ HyperDB.prototype.authorized = function (key, cb) {
 
   if (this.key.equals(key)) return process.nextTick(cb, null, true)
 
-  tips(key, function (err, heads) {
+  this._tips(key, function (err, heads) {
     if (err) return cb(err)
     var max = 0
     for (var i = 0; i < heads.length; i++) {
@@ -277,23 +277,34 @@ HyperDB.prototype.authorized = function (key, cb) {
 
     return cb(null, false)
   })
+}
 
-  function tips (excludeKey, cb) {
-    var res = []
-    var pending = 0
-    var error
+HyperDB.prototype._tips = function (excludeKey, cb) {
+  if (typeof excludeKey === 'function' && !cb) {
+    cb = excludeKey
+    excludeKey = null
+  }
+
+  var self = this
+  var res = []
+  var pending = 0
+  var error
+
+  this.ready(function () {
     for (var i = 0; i < self._writers.length; i++) {
       var writer = self._writers[i]
-      if (writer._feed.key.equals(excludeKey)) continue
+      if (excludeKey && writer._feed.key.equals(excludeKey)) continue
       pending++
-      writer.head(function (err, head) {
-        if (err) error = err
-        if (head) res.push(head)
-        if (--pending) return
-        if (error) cb(error)
-        else cb(null, res)
-      })
+      writer.head(onhead)
     }
+  })
+
+  function onhead (err, head) {
+    if (err) error = err
+    if (head) res.push(head)
+    if (--pending) return
+    if (error) cb(error)
+    else cb(null, res)
   }
 }
 
