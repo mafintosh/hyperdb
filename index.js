@@ -258,6 +258,8 @@ HyperDB.prototype.authorized = function (key, cb) {
   if (!cb) cb = noop
   var self = this
 
+  if (this.key.equals(key)) return process.nextTick(cb, null, true)
+
   this.heads(function (err, heads) {
     if (err) return cb(err)
     for (var i = 0; i < heads.length; i++) {
