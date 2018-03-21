@@ -265,7 +265,7 @@ HyperDB.prototype.authorized = function (key, cb) {
     var max = 0
     for (var i = 0; i < heads.length; i++) {
       var head = heads[i]
-      max = Math.max(head.clock.length)
+      max = Math.max(head.clock.length, max)
     }
 
     for (var j = 0; j < max; j++) {
@@ -287,7 +287,7 @@ HyperDB.prototype._tips = function (excludeKey, cb) {
 
   var self = this
   var res = []
-  var pending = 0
+  var pending = 1
   var error
 
   this.ready(function () {
@@ -297,6 +297,8 @@ HyperDB.prototype._tips = function (excludeKey, cb) {
       pending++
       writer.head(onhead)
     }
+
+    onhead(null, null)
   })
 
   function onhead (err, head) {
