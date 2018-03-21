@@ -1,5 +1,3 @@
-var p = require('path')
-
 var tape = require('tape')
 var seed = require('seed-random')
 
@@ -24,7 +22,7 @@ run(
     dirSize: 2,
     conflicts: 0,
     writers: 2,
-    replications: 1,
+    replications: 1
   }, cb),
   function (err) {
     if (err) console.error('Fuzz testing errored:', err)
@@ -71,7 +69,7 @@ function test (probability, rand) {
 function sample (arr, count, rand, withReplacement) {
   if (count > arr.length && !withReplacement) throw Error('Invalid sampling arguments.')
   var result = []
-  while(result.length != count) {
+  while (result.length !== count) {
     var candidate = arr[Math.floor(rand() * arr.length)]
     if (withReplacement) result.push(candidate)
     else if (result.indexOf(candidate) === -1) result.push(candidate)
@@ -98,8 +96,8 @@ function generateData (opts) {
   for (var i = 0; i < opts.keys; i++) {
     var prefix = sample(ALPHABET, opts.prefixSize, random, true).join('')
 
-    var shouldPushDir = test(opts.dirs / opts.keys, random)
-      && stack.length < opts.keyDepth
+    var shouldPushDir = test(opts.dirs / opts.keys, random) &&
+      stack.length < opts.keyDepth
     var shouldPopDir = stack.length && test(1 / opts.dirSize, random)
     var shouldReplicate = test(opts.replications / opts.keys, random)
 
@@ -158,16 +156,17 @@ function validate (db, processedBatches, cb) {
   tape(['validating after', processedBatches.length, 'replications'].join(' '), function (t) {
     t.plan(allKeys.length + 1)
 
-    var readStream = db.createReadStream('/')    
+    var readStream = db.createReadStream('/')
     readStream.on('end', function () {
       var keys = Object.keys(expectedWrites)
       t.same(keys.length, 0, 'missing keys: ' + keys)
-      return cb()
+      if (keys.length === 0) return cb()
+      return cb(new Error(`missing keys: ${keys}`))
     })
     readStream.on('error', cb)
     readStream.on('data', function (nodes) {
       if (!nodes) return
-      console.log('IN DATA, node key:', nodes[0].key, 'node value:', nodes[0].value)
+      console.log('IN DATA, node key:', nodes[0].key, 'node value:', nodes[0].value, 'node feed:', nodes[0].feed)
       var key = nodes[0].key
       var values = nodes.map(node => node.value)
       t.same(values, expectedWrites[key])
@@ -191,10 +190,12 @@ function fuzzRunner (opts, cb) {
           var value = singleWrite.values[z]
           if (!value) continue
           var db = dbs[z]
-          batchOps.push((function (db, k, v) { return cb => put(db, [{
-            key: k,
-            value: v
-          }], cb) })(db, singleWrite.key, value))
+          batchOps.push((function (db, k, v) {
+            return cb => put(db, [{
+              key: k,
+              value: v
+            }], cb)
+          })(db, singleWrite.key, value))
         }
       }
       ops.push(batchOps)
