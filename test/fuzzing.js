@@ -42,8 +42,8 @@ run(
  *   keyDepth: 1, // The maximum number of path components per key.
  *   dirs: 20, // The approximate number of directories that will be created.
  *   dirSize: 10, // The approximate number of keys at each prefix level.
- *   prefixSize: 2, // The size of each path component.
- *   conflicts: 100, // The approximate number of conflicting keys.
+ *   prefixSize: 5, // The size of each path component.
+ *   conflicts: 0, // The approximate number of conflicting keys.
  *   replications: 10, // The approximate number of all-to-all replications/tests.
  *   valueSize: 20, // The size of each value.
  *   seed: 'hello' // The seed (for repeatable testing).
