@@ -3,10 +3,34 @@ var create = require('./helpers/create')
 
 tape('authorized writer passes "authorized" api', function (t) {
   create.two(function (a, b) {
-    b.authorized(b.local.key, function (err, auth) {
+    a.put('foo', 'bar', function (err) {
       t.error(err)
-      t.equals(auth, true)
-      t.end()
+      a.authorized(a.local.key, function (err, auth) {
+        t.error(err)
+        t.equals(auth, true)
+        b.authorized(b.local.key, function (err, auth) {
+          t.error(err)
+          t.equals(auth, true)
+          t.end()
+        })
+      })
+    })
+  })
+})
+
+tape('authorized writer passes "authorized" api', function (t) {
+  create.two(function (a, b) {
+    b.put('foo', 'bar', function (err) {
+      t.error(err)
+      a.authorized(a.local.key, function (err, auth) {
+        t.error(err)
+        t.equals(auth, true)
+        b.authorized(b.local.key, function (err, auth) {
+          t.error(err)
+          t.equals(auth, true)
+          t.end()
+        })
+      })
     })
   })
 })
@@ -35,7 +59,11 @@ tape('local unauthorized writes =/> authorized', function (t) {
         b.authorized(b.local.key, function (err, auth) {
           t.error(err)
           t.equals(auth, false)
-          t.end()
+          b.authorized(a.local.key, function (err, auth) {
+            t.error(err)
+            t.equals(auth, true)
+            t.end()
+          })
         })
       })
     })

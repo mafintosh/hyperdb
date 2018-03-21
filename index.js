@@ -258,23 +258,54 @@ HyperDB.prototype.authorized = function (key, cb) {
   if (!cb) cb = noop
   var self = this
 
-  this.heads(function (err, heads) {
+  if (this.key.equals(key)) return process.nextTick(cb, null, true)
+
+  this._tips(key, function (err, heads) {
     if (err) return cb(err)
+    var max = 0
     for (var i = 0; i < heads.length; i++) {
       var head = heads[i]
+      max = Math.max(head.clock.length)
+    }
 
-      // skip self-written nodes
-      if (self.feeds[head.feed].key.equals(key)) continue
-
-      for (var j = 0; j < head.clock.length; j++) {
-        var feedKey = self.feeds[head.clock[j]].key
-        if (feedKey.equals(key)) {
-          return cb(null, true)
-        }
+    for (var j = 0; j < max; j++) {
+      var feedKey = self.feeds[head.clock[j]].key
+      if (feedKey.equals(key)) {
+        return cb(null, true)
       }
     }
+
     return cb(null, false)
   })
+}
+
+HyperDB.prototype._tips = function (excludeKey, cb) {
+  if (typeof excludeKey === 'function' && !cb) {
+    cb = excludeKey
+    excludeKey = null
+  }
+
+  var self = this
+  var res = []
+  var pending = 0
+  var error
+
+  this.ready(function () {
+    for (var i = 0; i < self._writers.length; i++) {
+      var writer = self._writers[i]
+      if (excludeKey && writer._feed.key.equals(excludeKey)) continue
+      pending++
+      writer.head(onhead)
+    }
+  })
+
+  function onhead (err, head) {
+    if (err) error = err
+    if (head) res.push(head)
+    if (--pending) return
+    if (error) cb(error)
+    else cb(null, res)
+  }
 }
 
 HyperDB.prototype.authorize = function (key, cb) {
