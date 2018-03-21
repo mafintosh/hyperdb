@@ -250,8 +250,23 @@ HyperDB.prototype._index = function (key) {
   return -1
 }
 
-HyperDB.prototype.authorized = function (key) {
-  return this._index(key) > -1
+HyperDB.prototype.authorized = function (key, cb) {
+  if (!cb) cb = noop
+  var self = this
+
+  this.heads(function (err, heads) {
+    if (err) return cb(err)
+    for (var i = 0; i < heads.length; i++) {
+      var head = heads[i]
+      for (var j = 0; j < head.clock.length; j++) {
+        var feedKey = self.feeds[head.clock[j]].key
+        if (feedKey.equals(key)) {
+          return cb(null, true)
+        }
+      }
+    }
+    return cb(null, false)
+  })
 }
 
 HyperDB.prototype.authorize = function (key, cb) {
@@ -407,8 +422,7 @@ HyperDB.prototype._addWriter = function (key, cb) {
 
   writer._feed.ready(function (err) {
     if (err) return cb(err)
-    if (self.authorized(key)) return cb(null)
-    self._pushWriter(writer)
+    if (self._index(key) <= -1) self._pushWriter(writer)
     cb(null)
   })
 }
