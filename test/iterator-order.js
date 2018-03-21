@@ -20,8 +20,10 @@ Object.keys(cases).forEach((key) => {
   tape('iterator is hash order sorted (' + key + ')', function (t) {
     var keysToTest = cases[key]
     run(
-      cb => testSingleFeedWithKeys(t, keysToTest, cb),
-      cb => testTwoFeedsWithKeys(t, keysToTest, cb),
+      cb => testSingleFeedWithKeys(t, keysToTest, true, cb),
+      cb => testTwoFeedsWithKeys(t, keysToTest, true, cb),
+      cb => testSingleFeedWithKeys(t, keysToTest, false, cb),
+      cb => testTwoFeedsWithKeys(t, keysToTest, false, cb),
       cb => t.end()
     )
   })
@@ -61,25 +63,26 @@ tape('fully visit a folder before visiting the next one', function (t) {
   })
 })
 
-function testSingleFeedWithKeys (t, keys, cb) {
+function testSingleFeedWithKeys (t, keys, latest, cb) {
   t.comment('with single feed')
   var db = create.one()
   put(db, keys, function (err) {
     t.error(err, 'no error')
-    testIteratorOrder(t, db.iterator(), keys, cb)
+    testIteratorOrder(t, db.iterator({ latest }), keys, latest, cb)
   })
 }
 
-function testTwoFeedsWithKeys (t, keys, cb) {
+function testTwoFeedsWithKeys (t, keys, latest, cb) {
   t.comment('with values split across two feeds')
   create.two(function (db1, db2, replicate) {
     var half = Math.floor(keys.length / 2)
     run(
       cb => put(db1, keys.slice(0, half), cb),
+      cb => replicate(cb),
       cb => put(db2, keys.slice(half), cb),
       cb => replicate(cb),
-      cb => testIteratorOrder(t, db1.iterator(), keys, cb),
-      cb => testIteratorOrder(t, db2.iterator(), keys, cb),
+      cb => testIteratorOrder(t, db1.iterator({ latest }), keys, latest, cb),
+      cb => testIteratorOrder(t, db2.iterator({ latest }), keys, latest, cb),
       done
     )
   })
@@ -89,9 +92,13 @@ function testTwoFeedsWithKeys (t, keys, cb) {
   }
 }
 
-function testIteratorOrder (t, iterator, expected, done) {
-  var sorted = expected.slice(0).sort(sortByHash)
+function testIteratorOrder (t, iterator, expected, latest, done) {
+  var sorted = expected.slice(0)
+  if (latest) sorted.reverse()
+  else sorted.sort(sortByHash)
+
   each(iterator, onEach, onDone)
+
   function onEach (err, node) {
     t.error(err, 'no error')
     var key = node.key || node[0].key
