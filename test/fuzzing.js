@@ -3,6 +3,7 @@ var p = require('path')
 var tape = require('tape')
 var seed = require('seed-random')
 
+var normalizeKey = require('../lib/normalize')
 var create = require('./helpers/create')
 var run = require('./helpers/run')
 var put = require('./helpers/put')
@@ -18,13 +19,13 @@ run(
     replications: 2
   }, cb),
   cb => fuzzRunner({
-    keys: 200,
-    dirs: 5,
-    dirSize: 10,
-    conflicts: 5,
+    keys: 20,
+    dirs: 2,
+    dirSize: 2,
+    conflicts: 0,
     writers: 2,
-    replications: 5
-  }, cb)
+    replications: 2,
+  }, cb),
   function (err) {
     if (err) console.error('Fuzz testing errored:', err)
     else console.log('Fuzz testing completed with no error!')
@@ -55,7 +56,7 @@ function defaultOpts (opts) {
     keyDepth: 2,
     dirs: 20,
     dirSize: 10,
-    prefixSize: 2,
+    prefixSize: 5,
     conflicts: 0,
     replications: 10,
     valueSize: 20,
@@ -113,7 +114,7 @@ function generateData (opts) {
     if (!keysPerReplication[batchIdx]) keysPerReplication.push([])
 
     console.log('STACK:', stack)
-    keysPerReplication[batchIdx].push(p.relative('/', stack.join('/') + '/' + prefix))
+    keysPerReplication[batchIdx].push(normalizeKey(stack.join('/') + '/' + prefix))
     if (shouldReplicate) keysPerReplication.push([])
   }
 
@@ -123,7 +124,7 @@ function generateData (opts) {
     var writeBatch = []
     for (var j = 0; j < keyBatch.length; j++) {
       var singleWrite = { key: keyBatch[j], values: [] }
-      var shouldConflict = test(opts.conflicts / opts.keys, random)
+      var shouldConflict = opts.conflicts && test(opts.conflicts / opts.keys, random)
       var keyWriters = null
       if (shouldConflict) {
         var numConflicts = Math.floor(random() * opts.writers) + 1
@@ -134,6 +135,9 @@ function generateData (opts) {
       for (var z = 0; z < keyWriters.length; z++) {
         var valueString = sample(ALPHABET, opts.valueSize, random, true).join('')
         singleWrite.values[keyWriters[z]] = valueString
+      }
+      if (keyWriters.length > 1) {
+        console.log('THIS WRITE IS A CONFLICT', keyBatch[j], singleWrite.values)
       }
       writeBatch.push(singleWrite)
     }
@@ -189,11 +193,13 @@ function fuzzRunner (opts, cb) {
       for (var j = 0; j < batch.length; j++) {
         var singleWrite = batch[j]
         for (var z = 0; z < singleWrite.values.length; z++) {
+          var value = singleWrite.values[z]
+          if (!value) continue
           var db = dbs[z]
           batchOps.push((function (db, k, v) { return cb => put(db, [{
             key: k,
             value: v
-          }], cb) })(db, singleWrite.key, singleWrite.values[z]))
+          }], cb) })(db, singleWrite.key, value))
         }
       }
       ops.push(batchOps)
