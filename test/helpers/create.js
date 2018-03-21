@@ -11,45 +11,72 @@ exports.one = function (key, opts) {
 }
 
 exports.two = function (cb) {
-  var a = hyperdb(ram, {valueEncoding: 'utf-8'})
-  a.ready(function () {
-    var b = hyperdb(ram, a.key, {valueEncoding: 'utf-8'})
-    b.ready(function () {
-      a.authorize(b.local.key, function () {
-        replicate(a, b, function () {
-          cb(a, b, replicate.bind(null, a, b))
-        })
-      })
-    })
+  createMany(2, function (err, dbs, replicateByIndex) {
+    if (err) return cb(err)
+    dbs.push(replicateByIndex.bind(null, [0, 1]))
+    return cb.apply(null, dbs)
   })
 }
 
 exports.three = function (cb) {
-  var a = hyperdb(ram, {valueEncoding: 'utf-8'})
+  createMany(3, function (err, dbs, replicateByIndex) {
+    if (err) return cb(err)
+    dbs.push(replicateByIndex.bind(null, [0, 1, 2]))
+    return cb.apply(null, dbs)
+  })
+}
 
-  a.ready(function () {
-    var b = hyperdb(ram, a.key, {valueEncoding: 'utf-8'})
-    var c = hyperdb(ram, a.key, {valueEncoding: 'utf-8'})
+exports.many = createMany
 
-    b.ready(function () {
-      c.ready(function () {
-        a.authorize(b.local.key)
-        a.authorize(c.local.key, function () {
-          replicateAll(function () {
-            cb(a, b, c, replicateAll)
-          })
-        })
+function createMany (count, cb) {
+  var dbs = []
+  var remaining = count - 1
+
+  var first = hyperdb(ram, { valueEncoding: 'utf-8' })
+  first.ready(function (err) {
+    if (err) return cb(err)
+    dbs.push(first)
+    insertNext()
+  })
+
+  function insertNext () {
+    if (remaining === 0) return cb(null, dbs, replicateByIndex)
+    var db = hyperdb(ram, first.key, { valueEncoding: 'utf-8' })
+    db.ready(function (err) {
+      if (err) return cb(err)
+      first.authorize(db.local.key, function (err) {
+        if (err) return cb(err)
+        dbs.push(db)
+        remaining--
+        return insertNext()
       })
     })
+  }
 
-    function replicateAll (cb) {
-      replicate(a, b, function (err) {
-        if (err) return cb(err)
-        replicate(b, c, function (err) {
-          if (err) return cb(err)
-          replicate(a, c, cb)
-        })
+  function replicateByIndex (indices, cb) {
+    if (typeof indices === 'function') {
+      cb = indices
+      indices = dbs.map((_, i) => i)
+    }
+    if (indices.length === 0) return cb()
+
+    var pairs = []
+    for (var i = 0; i < indices.length; i++) {
+      for (var j = 1; j < indices.length; j++) {
+        if (i !== j) pairs.push([i, j])
+      }
+    }
+
+    var remaining = pairs.length
+    doReplicate()
+
+    function doReplicate () {
+      if (remaining === 0) return cb(null)
+      var pair = pairs[pairs.length - remaining--]
+      replicate(dbs[pair[0]], dbs[pair[1]], function (err) {
+        if (err) return cb(null)
+        return doReplicate()
       })
     }
-  })
+  }
 }

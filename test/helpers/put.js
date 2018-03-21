@@ -8,6 +8,7 @@ module.exports = function (db, list, cb) {
 
     var next = list[i++]
     if (typeof next === 'string') next = {key: next, value: next}
+    console.log('PUTTING', next.value, 'AT KEY:', next.key)
     db.put(next.key, next.value, loop)
   }
 }
