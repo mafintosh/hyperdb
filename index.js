@@ -804,7 +804,6 @@ function isOptions (opts) {
   return typeof opts === 'object' && !!opts && !Buffer.isBuffer(opts)
 }
 
-
 function createStorage (st) {
   if (typeof st === 'function') return st
   return function (name) {
