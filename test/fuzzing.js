@@ -80,7 +80,6 @@ function sample (arr, count, rand, withReplacement) {
 }
 
 function makeDatabases (opts, cb) {
-  opts = defaultOpts(opts)
   create.many(opts.writers, function (err, dbs, replicateByIndex) {
     if (err) throw err
     return cb(dbs, replicateByIndex)
@@ -88,8 +87,6 @@ function makeDatabases (opts, cb) {
 }
 
 function generateData (opts) {
-  opts = defaultOpts(opts)
-  
   var random = seed(opts.seed)
 
   var keysPerReplication = []
@@ -135,6 +132,7 @@ function generateData (opts) {
         var valueString = sample(ALPHABET, opts.valueSize, random, true).join('')
         singleWrite.values[keyWriters[z]] = valueString
       }
+      console.log('singleWrite:', singleWrite)
       writeBatch.push(singleWrite)
     }
     writesPerReplication.push(writeBatch)
@@ -178,6 +176,8 @@ function validate (db, processedBatches, cb) {
 }
 
 function fuzzRunner (opts, cb) {
+  opts = defaultOpts(opts)
+  console.log('Running fuzz test with opts:', opts)
   makeDatabases(opts, function (dbs, replicateByIndex) {
     var writesPerReplication = generateData(opts)
     var ops = []
