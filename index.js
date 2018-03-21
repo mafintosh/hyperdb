@@ -260,23 +260,41 @@ HyperDB.prototype.authorized = function (key, cb) {
 
   if (this.key.equals(key)) return process.nextTick(cb, null, true)
 
-  this.heads(function (err, heads) {
+  tips(key, function (err, heads) {
     if (err) return cb(err)
+    var max = 0
     for (var i = 0; i < heads.length; i++) {
       var head = heads[i]
+      max = Math.max(head.clock.length)
+    }
 
-      // skip self-written nodes
-      if (self.feeds[head.feed].key.equals(key)) continue
-
-      for (var j = 0; j < head.clock.length; j++) {
-        var feedKey = self.feeds[head.clock[j]].key
-        if (feedKey.equals(key)) {
-          return cb(null, true)
-        }
+    for (var j = 0; j < max; j++) {
+      var feedKey = self.feeds[head.clock[j]].key
+      if (feedKey.equals(key)) {
+        return cb(null, true)
       }
     }
+
     return cb(null, false)
   })
+
+  function tips (excludeKey, cb) {
+    var res = []
+    var pending = 0
+    var error
+    for (var i = 0; i < self._writers.length; i++) {
+      var writer = self._writers[i]
+      if (writer._feed.key.equals(excludeKey)) continue
+      pending++
+      writer.head(function (err, head) {
+        if (err) error = err
+        if (head) res.push(head)
+        if (--pending) return
+        if (error) cb(error)
+        else cb(null, res)
+      })
+    }
+  }
 }
 
 HyperDB.prototype.authorize = function (key, cb) {

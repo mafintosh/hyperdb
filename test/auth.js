@@ -18,6 +18,24 @@ tape('authorized writer passes "authorized" api', function (t) {
   })
 })
 
+tape('authorized writer passes "authorized" api', function (t) {
+  create.two(function (a, b) {
+    b.put('foo', 'bar', function (err) {
+      t.error(err)
+      a.authorized(a.local.key, function (err, auth) {
+        t.error(err)
+        t.equals(auth, true)
+        b.authorized(b.local.key, function (err, auth) {
+          t.error(err)
+          t.equals(auth, true)
+          t.end()
+        })
+      })
+    })
+  })
+})
+
+
 tape('unauthorized writer fails "authorized" api', function (t) {
   var a = create.one()
   a.ready(function () {
