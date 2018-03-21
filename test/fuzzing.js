@@ -166,10 +166,10 @@ function fuzzRunner (opts, cb) {
         var singleWrite = batch[j]
         for (var z = 0; z < singleWrite.values.length; z++) {
           var db = dbs[z]
-          var key = singleWrite.key
-          var value = singleWrite.values[z]
-          console.log('PUSHING BATCH OP WITH KEY', key, value)
-          batchOps.push(cb => put(db, [{ key, value }], cb))
+          batchOps.push((function (k, v) { return cb => put(db, [{
+            key: k,
+            value: v
+          }], cb) })(singleWrite.key, singleWrite.values[z]))
         }
       }
       ops.push(batchOps)
