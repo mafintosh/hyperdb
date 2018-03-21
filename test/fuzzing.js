@@ -19,12 +19,12 @@ run(
     replications: 2
   }, cb),
   cb => fuzzRunner({
-    keys: 20,
-    dirs: 2,
+    keys: 5,
+    dirs: 1,
     dirSize: 2,
     conflicts: 0,
     writers: 2,
-    replications: 2,
+    replications: 1,
   }, cb),
   function (err) {
     if (err) console.error('Fuzz testing errored:', err)
@@ -113,7 +113,6 @@ function generateData (opts) {
 
     if (!keysPerReplication[batchIdx]) keysPerReplication.push([])
 
-    console.log('STACK:', stack)
     keysPerReplication[batchIdx].push(normalizeKey(stack.join('/') + '/' + prefix))
     if (shouldReplicate) keysPerReplication.push([])
   }
@@ -136,9 +135,6 @@ function generateData (opts) {
         var valueString = sample(ALPHABET, opts.valueSize, random, true).join('')
         singleWrite.values[keyWriters[z]] = valueString
       }
-      if (keyWriters.length > 1) {
-        console.log('THIS WRITE IS A CONFLICT', keyBatch[j], singleWrite.values)
-      }
       writeBatch.push(singleWrite)
     }
     writesPerReplication.push(writeBatch)
@@ -152,10 +148,8 @@ function validate (db, processedBatches, cb) {
   // Assuming the batches are insertion order.
   for (var i = 0; i < processedBatches.length; i++) {
     var writeBatch = processedBatches[i]
-    console.log('writeBatch:', writeBatch)
     for (var j = 0; j < writeBatch.length; j++) {
       var singleWrite = writeBatch[j]
-      console.log('singleWrite:', singleWrite)
       expectedWrites[singleWrite.key] = singleWrite.values.filter(_ => true)
     }
   }
