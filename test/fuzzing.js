@@ -8,7 +8,7 @@ var create = require('./helpers/create')
 var run = require('./helpers/run')
 var put = require('./helpers/put')
 
-var ALPHABET = ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j']
+const ALPHABET = ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j']
 
 run(
   cb => fuzzRunner({
@@ -19,7 +19,7 @@ run(
     replications: 2
   }, cb),
   cb => fuzzRunner({
-    keys: 5,
+    keys: 10,
     dirs: 1,
     dirSize: 2,
     conflicts: 0,
@@ -160,7 +160,8 @@ function validate (db, processedBatches, cb) {
 
     var readStream = db.createReadStream('/')    
     readStream.on('end', function () {
-      t.same(Object.keys(expectedWrites).length, 0)
+      var keys = Object.keys(expectedWrites)
+      t.same(keys.length, 0, 'missing keys: ' + keys)
       return cb()
     })
     readStream.on('error', cb)
