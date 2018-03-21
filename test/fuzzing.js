@@ -17,6 +17,14 @@ run(
     conflicts: 0,
     replications: 2
   }, cb),
+  cb => fuzzRunner({
+    keys: 200,
+    dirs: 5,
+    dirSize: 10,
+    conflicts: 5,
+    writers: 2,
+    replications: 5
+  }, cb)
   function (err) {
     if (err) console.error('Fuzz testing errored:', err)
     else console.log('Fuzz testing completed with no error!')
