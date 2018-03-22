@@ -11,6 +11,7 @@ var path = require('path')
 var util = require('util')
 var bulk = require('bulk-write-stream')
 var events = require('events')
+var sodium = require('sodium-universal')
 var hash = require('./lib/hash')
 var iterator = require('./lib/iterator')
 var differ = require('./lib/differ')
@@ -49,6 +50,8 @@ function HyperDB (storage, key, opts) {
   this.opened = false
   this.sparse = !!opts.sparse
   this.sparseContent = opts.sparseContent !== undefined ? !!opts.sparseContent : this.sparse
+  this.id = Buffer.alloc(32)
+  sodium.randombytes_buf(this.id)
 
   this._storage = createStorage(storage)
   this._contentStorage = opts.contentFeed ? this._storage : null
@@ -332,6 +335,7 @@ HyperDB.prototype.replicate = function (opts) {
   var factor = this.contentFeeds ? 2 : 1
 
   opts.expectedFeeds = expectedFeeds * factor
+  if (!opts.id) opts.id = this.id
 
   if (!opts.stream) opts.stream = protocol(opts)
   var stream = opts.stream
