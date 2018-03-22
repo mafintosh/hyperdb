@@ -41,6 +41,7 @@ function HyperDB (storage, key, opts) {
 
   this.key = typeof key === 'string' ? Buffer.from(key, 'hex') : key
   this.discoveryKey = this.key ? hypercore.discoveryKey(this.key) : null
+  this.secretKey = opts.secretKey || null
   this.source = checkout ? checkout.source : null
   this.local = checkout ? checkout.local : null
   this.localContent = checkout ? checkout.localContent : null
@@ -427,12 +428,17 @@ HyperDB.prototype._getAllPointers = function (list, isPut, cb) {
   }
 }
 
-HyperDB.prototype._writer = function (dir, key) {
+HyperDB.prototype._writer = function (dir, key, secretKey) {
   var writer = key && this._byKey.get(key.toString('hex'))
   if (writer) return writer
 
   var self = this
-  var feed = hypercore(storage, key, {sparse: this.sparse})
+  var opts = {sparse: this.sparse}
+  if (secretKey) {
+    opts.secretKey = secretKey
+    opts.storeSecretKey = true
+  }
+  var feed = hypercore(storage, key, opts)
 
   writer = new Writer(self, feed)
   feed.on('append', onappend)
@@ -558,7 +564,7 @@ HyperDB.prototype._ready = function (cb) {
     return
   }
 
-  if (!this.source) this.source = feed('source', this.key)
+  if (!this.source) this.source = feed('source', this.key, this.secretKey)
 
   this.source.ready(function (err) {
     if (err) return done(err)
@@ -590,8 +596,8 @@ HyperDB.prototype._ready = function (cb) {
     cb(null)
   }
 
-  function feed (dir, key) {
-    var writer = self._writer(dir, key)
+  function feed (dir, key, secretKey) {
+    var writer = self._writer(dir, key, secretKey)
     self._pushWriter(writer)
     return writer._feed
   }
