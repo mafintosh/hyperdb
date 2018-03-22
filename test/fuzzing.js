@@ -163,14 +163,14 @@ function validate (db, processedBatches, cb) {
     var readStream = db.createReadStream('/')
     readStream.on('end', function () {
       var keys = Object.keys(expectedWrites)
-      t.same(keys.length, 0, `missing keys: ${keys}`)
-      if (keys.length === 0) return cb(null)
+      t.same(keys.length, 0, 'missing keys: ' + keys)
+      if (keys.length === 0) return cb()
       return cb(new Error(`missing keys: ${keys}`))
     })
     readStream.on('error', cb)
     readStream.on('data', function (nodes) {
       if (!nodes) return
-      console.log('IN DATA, node key:', nodes[0].key, 'node value:', nodes[0].value)
+      console.log('IN DATA, node key:', nodes[0].key, 'node value:', nodes[0].value, 'node feed:', nodes[0].feed)
       var key = nodes[0].key
       var values = nodes.map(node => node.value)
       t.same(values, expectedWrites[key])
