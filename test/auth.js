@@ -1,5 +1,6 @@
 var tape = require('tape')
 var create = require('./helpers/create')
+var replicate = require('./helpers/replicate')
 
 tape('authorized writer passes "authorized" api', function (t) {
   create.two(function (a, b) {
@@ -64,6 +65,21 @@ tape('local unauthorized writes =/> authorized', function (t) {
             t.equals(auth, true)
             t.end()
           })
+        })
+      })
+    })
+  })
+})
+
+tape('unauthorized writer doing a put after replication', function (t) {
+  t.plan(1)
+  var a = create.one()
+  a.ready(function () {
+    var b = create.one(a.key)
+    b.ready(function () {
+      replicate(a, b, function () {
+        b.put('foo', 'bar', function (err) {
+          t.error(err)
         })
       })
     })

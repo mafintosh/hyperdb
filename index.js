@@ -358,6 +358,7 @@ HyperDB.prototype.replicate = function (opts) {
 
     self._replicating.push(replicate)
     stream.on('close', onclose)
+    stream.on('end', onclose)
 
     replicate()
 
@@ -376,7 +377,7 @@ HyperDB.prototype.replicate = function (opts) {
 
     function onclose () {
       var i = self._replicating.indexOf(replicate)
-      remove(self._replicating, i)
+      if (i > -1) remove(self._replicating, i)
     }
   }
 
