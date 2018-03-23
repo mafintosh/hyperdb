@@ -13,7 +13,7 @@ tape('fuzz testing', function (t) {
       replications: 2
     }, cb),
     cb => fuzzRunner(t, {
-      keys: 10,
+      keys: 9,
       dirs: 1,
       dirSize: 2,
       conflicts: 0,
