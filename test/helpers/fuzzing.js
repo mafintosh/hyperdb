@@ -1,6 +1,7 @@
 var p = require('path')
 var fs = require('fs')
 
+var prettier = require('prettier')
 var seed = require('seed-random')
 
 var normalizeKey = require('../../lib/normalize')
@@ -159,7 +160,7 @@ function generateFailingTest (name, dbCount, writesPerReplication, writeOps, cb)
     t.error(err)
     t.end()
   }).toString()
-  fs.writeFile(p.join(__dirname, '..', name + '.js'), `
+  fs.writeFile(p.join(__dirname, '..', name + '.js'), prettier.format(`
     var tape = require('tape')  
 
     var run = require('./helpers/run')
@@ -175,7 +176,7 @@ function generateFailingTest (name, dbCount, writesPerReplication, writeOps, cb)
         t.error(err)
         run(${writeOps.map(op => op.toString())})
       })
-    })`, { encoding: 'utf-8' }, cb)
+    })`, { singleQuote: true, semi: false }, { encoding: 'utf-8' }, cb))
 }
 
 var testNum = 0
