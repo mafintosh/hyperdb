@@ -144,8 +144,8 @@ Watch a folder and get notified anytime a key inside this folder
 has changed.
 
 ```js
-db.watch('foo/bar', function () {
-  console.log('folder has changed')
+db.watch('foo/bar', function (node) {
+  console.log('key:', node.key, ', value: ', node.value, ' in folder has changed')
 })
 
 ...
