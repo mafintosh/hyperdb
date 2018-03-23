@@ -44,7 +44,6 @@
   "homepage": "https://github.com/mafintosh/hyperdb#readme",
   "standard": {
     "ignore": [
-      "test/helpers/fuzzing.js"
     ]
   }
 }

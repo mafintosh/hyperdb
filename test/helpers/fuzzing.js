@@ -1,6 +1,3 @@
-var p = require('path')
-var fs = require('fs')
-
 var prettier = require('prettier')
 var seed = require('seed-random')
 
@@ -99,22 +96,21 @@ function generateData (opts) {
   // Generate the values for those keys (including possible conflicts).
   for (i = 0; i < keysPerReplication.length; i++) {
     var keyBatch = keysPerReplication[i]
-    var writeBatch = []
+    var writeBatch = new Map()
     for (var j = 0; j < keyBatch.length; j++) {
-      var singleWrite = { key: keyBatch[j], values: [] }
       var shouldConflict = opts.conflicts && test(opts.conflicts / opts.keys, random)
       var keyWriters = null
-      if (shouldConflict) {
-        var numConflicts = Math.floor(random() * opts.writers) + 1
-        keyWriters = sample(writers, numConflicts, random, false)
-      } else {
-        keyWriters = sample(writers, 1, random, false)
-      }
+
+      var numConflicts = shouldConflict ? Math.floor(random() * opts.writers) + 1 : 1
+      keyWriters = sample(writers, numConflicts, random, false)
+
+      var values = []
       for (var z = 0; z < keyWriters.length; z++) {
         var valueString = sample(ALPHABET, opts.valueSize, random, true).join('')
-        singleWrite.values[keyWriters[z]] = valueString
+        values[keyWriters[z]] = valueString
       }
-      writeBatch.push(singleWrite)
+
+      writeBatch.set(keyBatch[j], values)
     }
     writesPerReplication.push(writeBatch)
   }
@@ -123,25 +119,20 @@ function generateData (opts) {
 }
 
 function validate (t, db, processedBatches, cb) {
-  var expectedWrites = {}
-  // Assuming the batches are insertion order.
+  var expectedWrites = new Map()
   for (var i = 0; i < processedBatches.length; i++) {
-    var writeBatch = processedBatches[i]
-    for (var j = 0; j < writeBatch.length; j++) {
-      var singleWrite = writeBatch[j]
-      expectedWrites[singleWrite.key] = singleWrite.values.filter(val => !!val)
-    }
+    processedBatches[i].forEach((v, k) => expectedWrites.set(k, v))
   }
-  var allKeys = Object.keys(expectedWrites)
 
   t.test(`validating after ${processedBatches.length} replications`, function (t) {
-    t.plan(allKeys.length + 1)
+    t.plan(expectedWrites.size + 1)
 
     var readStream = db.createReadStream('/')
     readStream.on('end', function () {
-      var keys = Object.keys(expectedWrites)
-      t.same(keys.length, 0, 'missing keys: ' + keys)
-      if (keys.length === 0) return cb()
+      var keys = expectedWrites.size === 0 ? 'none' : Array.from(expectedWrites.keys()).join(',') 
+      t.same(expectedWrites.size, 0, `missing keys: ${keys}`)
+
+      if (expectedWrites.size === 0) return cb()
       return cb(new Error(`missing keys: ${keys}`))
     })
     readStream.on('error', cb)
@@ -149,8 +140,8 @@ function validate (t, db, processedBatches, cb) {
       if (!nodes) return
       var key = nodes[0].key
       var values = nodes.map(node => node.value)
-      t.same(values, expectedWrites[key])
-      delete expectedWrites[key]
+      t.same(values, expectedWrites.get(key).filter(v => !!v))
+      expectedWrites.delete(key)
     })
   })
 }
@@ -192,22 +183,22 @@ function fuzzRunner (t, opts, cb) {
 
   var writesPerReplication = generateData(opts)
 
+  console.log('writesPerReplication:', writesPerReplication)
   makeDatabases(opts, function (dbs, replicateByIndex) {
     var ops = []
     for (var i = 0; i < writesPerReplication.length; i++) {
       var batch = writesPerReplication[i]
       var batchOps = []
-      for (var j = 0; j < batch.length; j++) {
-        var singleWrite = batch[j]
-        for (var z = 0; z < singleWrite.values.length; z++) {
-          var value = singleWrite.values[z]
+      for (var [key, values] of batch) {
+        for (var j = 0; j < values.length; j++) {
+          var value = values[j]
           if (!value) continue
           batchOps.push(
             // Evaling here so that function.toString contains variable values.
             // (Used for test code generation).
             eval(`(cb => {
-              put(dbs[${z}], [{
-                key: '${singleWrite.key}',
+              put(dbs[${j}], [{
+                key: '${key}',
                 value: '${value}'
               }], cb)
             })`)
@@ -232,9 +223,8 @@ function fuzzRunner (t, opts, cb) {
         // Don't include the validation/replication ops in the test case generation.
         // Also don't include the doRun callback in each batch
         var failingBatches = ops.slice(0, finished).map(batch => batch.slice(0, -1))
-        generateFailingTest(`failing-test-${testNum}`, opts.writers, writesPerReplication, failingBatches, () => {
-          return cb(err)
-        })
+        generateFailingTest(`failing-test-${testNum}`, opts.writers,
+          writesPerReplication, failingBatches, cb)
         return
       } else {
         if (finished === ops.length) return cb(null)
