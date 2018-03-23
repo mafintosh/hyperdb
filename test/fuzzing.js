@@ -21,8 +21,8 @@ tape('fuzz testing', function (t) {
       replications: 1
     }, cb),
     function (err) {
-      if (err) console.error('Fuzz testing errored:', err)
-      else console.log('Fuzz testing completed with no error!')
+      t.error(err)
+      t.end()
     }
   )
 })

@@ -134,7 +134,7 @@ function validate (t, db, processedBatches, cb) {
   }
   var allKeys = Object.keys(expectedWrites)
 
-  t.test(['validating after', processedBatches.length, 'replications'].join(' '), function (t) {
+  t.test(`validating after ${processedBatches.length} replications`, function (t) {
     t.plan(allKeys.length + 1)
 
     var readStream = db.createReadStream('/')
@@ -160,7 +160,8 @@ function generateFailingTest (name, dbCount, writesPerReplication, writeOps, cb)
     t.error(err)
     t.end()
   }).toString()
-  fs.writeFile(p.join(__dirname, '..', name + '.js'), prettier.format(`
+  console.log('\n Generated Test Case:\n')
+  console.log(prettier.format(`
     var tape = require('tape')  
 
     var run = require('./helpers/run')
@@ -176,7 +177,9 @@ function generateFailingTest (name, dbCount, writesPerReplication, writeOps, cb)
         t.error(err)
         run(${writeOps.map(op => op.toString())})
       })
-    })`, { singleQuote: true, semi: false }, { encoding: 'utf-8' }, cb))
+    })`, { singleQuote: true, semi: false }))
+  console.log('\n')
+  process.nextTick(cb)
 }
 
 var testNum = 0
@@ -199,14 +202,16 @@ function fuzzRunner (t, opts, cb) {
         for (var z = 0; z < singleWrite.values.length; z++) {
           var value = singleWrite.values[z]
           if (!value) continue
-          batchOps.push((function (z, k, v) {
-            return eval(`(cb => {
+          batchOps.push(
+            // Evaling here so that function.toString contains variable values.
+            // (Used for test code generation).
+            eval(`(cb => {
               put(dbs[${z}], [{
-                key: '${k}',
-                value: '${v}'
+                key: '${singleWrite.key}',
+                value: '${value}'
               }], cb)
             })`)
-          })(z, singleWrite.key, value))
+          )
         }
       }
       ops.push(batchOps)
@@ -214,9 +219,8 @@ function fuzzRunner (t, opts, cb) {
       ops.push([
         // Currently replicating between all databases at every replication point.
         cb => replicateByIndex(cb),
-        (function (i) {
-          return eval(`(cb => validate(t, dbs[0], writesPerReplication.slice(0, ${i + 1}), cb))`)
-        })(i),
+        // Evaling to capture `i` for test generation.
+        eval(`(cb => validate(t, dbs[0], writesPerReplication.slice(0, ${i + 1}), cb))`)
       ])
     }
 
