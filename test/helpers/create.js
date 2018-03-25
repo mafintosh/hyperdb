@@ -40,7 +40,13 @@ function createMany (count, cb) {
   })
 
   function insertNext () {
-    if (remaining === 0) return cb(null, dbs, replicateByIndex)
+    if (remaining === 0) {
+      // After the databases have been created, replicate all the authorizations.
+      return replicateByIndex(err => {
+        if (err) return cb(err)
+        return cb(null, dbs, replicateByIndex)
+      })
+    }
     var db = hyperdb(ram, first.key, { valueEncoding: 'utf-8' })
     db.ready(function (err) {
       if (err) return cb(err)
