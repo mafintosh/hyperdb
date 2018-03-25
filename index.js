@@ -11,6 +11,7 @@ var path = require('path')
 var util = require('util')
 var bulk = require('bulk-write-stream')
 var events = require('events')
+var sodium = require('sodium-universal')
 var hash = require('./lib/hash')
 var iterator = require('./lib/iterator')
 var differ = require('./lib/differ')
@@ -21,6 +22,7 @@ var messages = require('./lib/messages')
 var trie = require('./lib/trie-encoding')
 var watch = require('./lib/watch')
 var normalizeKey = require('./lib/normalize')
+var derive = require('./lib/derive')
 
 module.exports = HyperDB
 
@@ -49,6 +51,8 @@ function HyperDB (storage, key, opts) {
   this.opened = false
   this.sparse = !!opts.sparse
   this.sparseContent = opts.sparseContent !== undefined ? !!opts.sparseContent : this.sparse
+  this.id = Buffer.alloc(32)
+  sodium.randombytes_buf(this.id)
 
   this._storage = createStorage(storage)
   this._contentStorage = opts.contentFeed ? this._storage : null
@@ -181,6 +185,10 @@ HyperDB.prototype.version = function (cb) {
 HyperDB.prototype.checkout = function (version, opts) {
   if (!opts) opts = {}
 
+  if (typeof version === 'string') {
+    version = Buffer.from(version, 'hex')
+  }
+
   if (Array.isArray(version)) {
     opts.heads = version
     version = null
@@ -202,6 +210,15 @@ HyperDB.prototype.snapshot = function (opts) {
 HyperDB.prototype.heads = function (cb) {
   if (!this.opened) return readyAndHeads(this, cb)
   if (this._heads) return process.nextTick(cb, null, this._heads)
+
+  // This is a bit of a hack. Basically when the db is empty
+  // we wanna wait for data to come in. TODO: We should guarantee
+  // that the db always has a single block of data (like a header)
+  if (this._waitForUpdate()) {
+    this.setMaxListeners(0)
+    this.once('remote-update', this.heads.bind(this, cb))
+    return
+  }
 
   var self = this
   var len = this._writers.length
@@ -227,6 +244,12 @@ HyperDB.prototype.heads = function (cb) {
   }
 }
 
+HyperDB.prototype._waitForUpdate = function () {
+  return this._replicating.length &&
+    !this._writers[0].length() &&
+    this.local !== this.source
+}
+
 HyperDB.prototype._index = function (key) {
   if (key.key) key = key.key
   for (var i = 0; i < this.feeds.length; i++) {
@@ -235,8 +258,60 @@ HyperDB.prototype._index = function (key) {
   return -1
 }
 
-HyperDB.prototype.authorized = function (key) {
-  return this._index(key) > -1
+HyperDB.prototype.authorized = function (key, cb) {
+  if (!cb) cb = noop
+  var self = this
+
+  if (this.key.equals(key)) return process.nextTick(cb, null, true)
+
+  this._tips(key, function (err, heads) {
+    if (err) return cb(err)
+    var max = 0
+    for (var i = 0; i < heads.length; i++) {
+      var head = heads[i]
+      max = Math.max(head.clock.length, max)
+    }
+
+    for (var j = 0; j < max; j++) {
+      var feedKey = self.feeds[head.clock[j]].key
+      if (feedKey.equals(key)) {
+        return cb(null, true)
+      }
+    }
+
+    return cb(null, false)
+  })
+}
+
+HyperDB.prototype._tips = function (excludeKey, cb) {
+  if (typeof excludeKey === 'function' && !cb) {
+    cb = excludeKey
+    excludeKey = null
+  }
+
+  var self = this
+  var res = []
+  var pending = 1
+  var error
+
+  this.ready(function () {
+    for (var i = 0; i < self._writers.length; i++) {
+      var writer = self._writers[i]
+      if (excludeKey && writer._feed.key.equals(excludeKey)) continue
+      pending++
+      writer.head(onhead)
+    }
+
+    onhead(null, null)
+  })
+
+  function onhead (err, head) {
+    if (err) error = err
+    if (head) res.push(head)
+    if (--pending) return
+    if (error) cb(error)
+    else cb(null, res)
+  }
 }
 
 HyperDB.prototype.authorize = function (key, cb) {
@@ -261,6 +336,7 @@ HyperDB.prototype.replicate = function (opts) {
   var factor = this.contentFeeds ? 2 : 1
 
   opts.expectedFeeds = expectedFeeds * factor
+  if (!opts.id) opts.id = this.id
 
   if (!opts.stream) opts.stream = protocol(opts)
   var stream = opts.stream
@@ -283,6 +359,7 @@ HyperDB.prototype.replicate = function (opts) {
 
     self._replicating.push(replicate)
     stream.on('close', onclose)
+    stream.on('end', onclose)
 
     replicate()
 
@@ -301,7 +378,7 @@ HyperDB.prototype.replicate = function (opts) {
 
     function onclose () {
       var i = self._replicating.indexOf(replicate)
-      remove(self._replicating, i)
+      if (i > -1) remove(self._replicating, i)
     }
   }
 
@@ -361,11 +438,16 @@ HyperDB.prototype._writer = function (dir, key) {
 
   writer = new Writer(self, feed)
   feed.on('append', onappend)
+  feed.on('remote-update', onremoteupdate)
 
   if (key) addWriter(null)
   else feed.ready(addWriter)
 
   return writer
+
+  function onremoteupdate () {
+    self.emit('remote-update', feed)
+  }
 
   function onappend () {
     for (var i = 0; i < self._watching.length; i++) self._watching[i]._kick()
@@ -387,8 +469,7 @@ HyperDB.prototype._addWriter = function (key, cb) {
 
   writer._feed.ready(function (err) {
     if (err) return cb(err)
-    if (self.authorized(key)) return cb(null)
-    self._pushWriter(writer)
+    if (self._index(key) <= -1) self._pushWriter(writer)
     cb(null)
   })
 }
@@ -495,12 +576,11 @@ HyperDB.prototype._ready = function (cb) {
       self._localWriter = self._writers[self.feeds.indexOf(self.local)]
       self._localWriter.head(function (err) {
         if (err) return done(err)
-        if (!self._contentStorage || self._localWriter._contentFeed) return done(null)
+        if (!self._contentStorage) return done(null)
 
         self._localWriter._ensureContentFeed(null)
         self.localContent = self._localWriter._contentFeed
-
-        done(null)
+        self.localContent.ready(done)
       })
     })
   })
@@ -526,16 +606,26 @@ HyperDB.prototype._ready = function (cb) {
     var nodes = []
     var error = null
 
+    if (typeof self._version === 'number') {
+      missing = 1
+      self._checkout._writers[0].get(self._version, onnode)
+      return
+    }
+
     while (offset < self._version.length) {
-      missing++
       var key = self._version.slice(offset, offset + 32)
       var seq = varint.decode(self._version, offset + 32)
       offset += 32 + varint.decode.bytes
       var writer = self._checkout._byKey.get(key.toString('hex'))
+      if (!writer) {
+        error = new Error('Invalid version')
+        continue
+      }
+      missing++
       writer.get(seq, onnode)
     }
 
-    if (!missing) oncheckout(null, [])
+    if (!missing) oncheckout(error, [])
 
     function onnode (err, node) {
       if (err) error = err
@@ -550,6 +640,7 @@ HyperDB.prototype._ready = function (cb) {
     self.opened = true
     self.source = self._checkout.source
     self.local = self._checkout.local
+    self.localContent = self._checkout.localContent
     self.key = self._checkout.key
     self.discoveryKey = self._checkout.discoveryKey
     self._heads = heads
@@ -720,8 +811,19 @@ Writer.prototype._ensureContentFeed = function (key) {
   if (this._contentFeed) return
 
   var self = this
+  var secretKey = null
 
-  this._contentFeed = hypercore(storage, key, {sparse: this._db.sparseContent})
+  if (!key) {
+    var pair = derive(this._db.local.secretKey)
+    secretKey = pair.secretKey
+    key = pair.publicKey
+  }
+
+  this._contentFeed = hypercore(storage, key, {
+    sparse: this._db.sparseContent,
+    secretKey
+  })
+
   if (this._db.contentFeeds) this._db.contentFeeds[this._id] = this._contentFeed
 
   function storage (name) {

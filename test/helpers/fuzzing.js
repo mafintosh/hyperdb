@@ -124,8 +124,6 @@ function validate (t, db, processedBatches, cb) {
     processedBatches[i].forEach((v, k) => expectedWrites.set(k, v))
   }
 
-  console.log('EXPECTED WRITES:', expectedWrites)
-
   t.test(`validating after ${processedBatches.length} replications`, function (t) {
     t.plan(expectedWrites.size + 1)
 
@@ -187,7 +185,6 @@ function fuzzRunner (t, opts, cb) {
 
   var writesPerReplication = generateData(opts)
 
-  console.log('writesPerReplication:', writesPerReplication)
   makeDatabases(opts, function (dbs, replicateByIndex) {
     var ops = []
     for (var i = 0; i < writesPerReplication.length; i++) {

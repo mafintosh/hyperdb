@@ -126,6 +126,18 @@ myDb.on('ready', function () {
 })
 ```
 
+#### `db.authorized(key, [callback])`
+
+Check whether a key is authorized to write to the database.
+
+```js
+myDb.authorized(otherDb.local.key, function (err, auth) {
+  if (err) console.log('err', err)
+  else if (auth === true) console.log('authorized')
+  else console.log('not authorized')
+})
+```
+
 #### `watcher = db.watch(folderOrKey, onchange)`
 
 Watch a folder and get notified anytime a key inside this folder
