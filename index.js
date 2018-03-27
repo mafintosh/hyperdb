@@ -43,7 +43,7 @@ function HyperDB (storage, key, opts) {
   this.discoveryKey = this.key ? hypercore.discoveryKey(this.key) : null
   this.sourceFeedOpts = {
     secretKey: opts.secretKey || null,
-    storeSecretKey: opts.hasOwnProperty('storeSecretKey') ? opts.storeSecretKey : true
+    storeSecretKey: opts.storeSecretKey !== false
   }
   this.source = checkout ? checkout.source : null
   this.local = checkout ? checkout.local : null
