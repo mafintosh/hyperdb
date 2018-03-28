@@ -41,10 +41,6 @@ function HyperDB (storage, key, opts) {
 
   this.key = typeof key === 'string' ? Buffer.from(key, 'hex') : key
   this.discoveryKey = this.key ? hypercore.discoveryKey(this.key) : null
-  this.sourceFeedOpts = {
-    secretKey: opts.secretKey || null,
-    storeSecretKey: opts.storeSecretKey !== false
-  }
   this.source = checkout ? checkout.source : null
   this.local = checkout ? checkout.local : null
   this.localContent = checkout ? checkout.localContent : null
@@ -73,6 +69,8 @@ function HyperDB (storage, key, opts) {
   this._valueEncoding = codecs(opts.valueEncoding || 'binary')
   this._batching = null
   this._batchingNodes = null
+  this._secretKey = opts.secretKey || null
+  this._storeSecretKey = opts.storeSecretKey !== false
 
   this.ready()
 }
@@ -567,7 +565,12 @@ HyperDB.prototype._ready = function (cb) {
     return
   }
 
-  if (!this.source) this.source = feed('source', this.key, this.sourceFeedOpts)
+  if (!this.source) {
+    this.source = feed('source', this.key, {
+      secretKey: this._secretKey,
+      storeSecretKey: this._storeSecretKey
+    })
+  }
 
   this.source.ready(function (err) {
     if (err) return done(err)
