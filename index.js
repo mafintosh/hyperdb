@@ -831,6 +831,7 @@ Writer.prototype._ensureContentFeed = function (key) {
 
   this._contentFeed = hypercore(storage, key, {
     sparse: this._db.sparseContent,
+    storeSecretKey: false,
     secretKey
   })
 
