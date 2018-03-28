@@ -201,7 +201,7 @@ tape('two writers, simple fork', function (t) {
 
     function on2db2 (err, nodes) {
       t.error(err, 'no error')
-      t.same(nodes.length, 0)
+      t.same(nodes, null)
     }
   })
 })
