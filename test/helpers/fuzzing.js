@@ -190,7 +190,9 @@ function fuzzRunner (t, opts, cb) {
     for (var i = 0; i < writesPerReplication.length; i++) {
       var batch = writesPerReplication[i]
       var batchOps = []
-      for (var [key, values] of batch) {
+      for (var b of batch) {
+        var key = b[0]
+        var values = b[1]
         for (var j = 0; j < values.length; j++) {
           var value = values[j]
           if (!value) continue
