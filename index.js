@@ -584,12 +584,15 @@ HyperDB.prototype._ready = function (cb) {
       if (err) return done(err)
 
       self._localWriter = self._writers[self.feeds.indexOf(self.local)]
-      self._localWriter.head(function (err) {
-        if (err) return done(err)
-        if (!self._contentStorage) return done(null)
 
+      if (self._contentStorage) {
         self._localWriter._ensureContentFeed(null)
         self.localContent = self._localWriter._contentFeed
+      }
+
+      self._localWriter.head(function (err) {
+        if (err) return done(err)
+        if (!self.localContent) return done(null)
         self.localContent.ready(done)
       })
     })
