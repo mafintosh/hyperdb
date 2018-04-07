@@ -260,59 +260,13 @@ HyperDB.prototype._index = function (key) {
 }
 
 HyperDB.prototype.authorized = function (key, cb) {
-  if (!cb) cb = noop
   var self = this
 
-  if (this.key.equals(key)) return process.nextTick(cb, null, true)
-
-  this._tips(key, function (err, heads) {
+  this.heads(function (err) {
     if (err) return cb(err)
-    var max = 0
-    for (var i = 0; i < heads.length; i++) {
-      var head = heads[i]
-      max = Math.max(head.clock.length, max)
-    }
-
-    for (var j = 0; j < max; j++) {
-      var feedKey = self.feeds[head.clock[j]].key
-      if (feedKey.equals(key)) {
-        return cb(null, true)
-      }
-    }
-
-    return cb(null, false)
+    // writers[0] is the source, always authed
+    cb(null, self._writers[0].authorizes(key, null))
   })
-}
-
-HyperDB.prototype._tips = function (excludeKey, cb) {
-  if (typeof excludeKey === 'function' && !cb) {
-    cb = excludeKey
-    excludeKey = null
-  }
-
-  var self = this
-  var res = []
-  var pending = 1
-  var error
-
-  this.ready(function () {
-    for (var i = 0; i < self._writers.length; i++) {
-      var writer = self._writers[i]
-      if (excludeKey && writer._feed.key.equals(excludeKey)) continue
-      pending++
-      writer.head(onhead)
-    }
-
-    onhead(null, null)
-  })
-
-  function onhead (err, head) {
-    if (err) error = err
-    if (head) res.push(head)
-    if (--pending) return
-    if (error) cb(error)
-    else cb(null, res)
-  }
 }
 
 HyperDB.prototype.authorize = function (key, cb) {
@@ -466,6 +420,10 @@ HyperDB.prototype._writer = function (dir, key, opts) {
   function storage (name) {
     return self._storage(dir + '/' + name)
   }
+}
+
+HyperDB.prototype._getWriter = function (key) {
+  return this._byKey.get(key.toString('hex'))
 }
 
 HyperDB.prototype._addWriter = function (key, cb) {
@@ -867,6 +825,24 @@ Writer.prototype._updateFeeds = function () {
     this._decodeMap[i] = id
     this._encodeMap[id] = i
   }
+}
+
+Writer.prototype.authorizes = function (key, visited) {
+  if (!visited) visited = new Array(this._db._writers.length)
+
+  if (this._feed.key.equals(key)) return true
+  if (!this._feedsMessage || visited[this._id]) return false
+  visited[this._id] = true
+
+  var feeds = this._feedsMessage.feeds || []
+  for (var i = 0; i < feeds.length; i++) {
+    var authedKey = feeds[i].key
+    if (authedKey.equals(key)) return true
+    var authedWriter = this._db._getWriter(authedKey)
+    if (authedWriter.authorizes(key, visited)) return true
+  }
+
+  return false
 }
 
 Writer.prototype.length = function () {
