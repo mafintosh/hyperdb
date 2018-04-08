@@ -398,6 +398,7 @@ HyperDB.prototype._writer = function (dir, key, opts) {
   writer = new Writer(self, feed)
   feed.on('append', onappend)
   feed.on('remote-update', onremoteupdate)
+  feed.on('sync', onreloadhead)
 
   if (key) addWriter(null)
   else feed.ready(addWriter)
@@ -406,6 +407,11 @@ HyperDB.prototype._writer = function (dir, key, opts) {
 
   function onremoteupdate () {
     self.emit('remote-update', feed, writer._id)
+  }
+
+  function onreloadhead () {
+    // read writer head to see if any new writers are added on full sync
+    writer.head(noop)
   }
 
   function onappend () {
