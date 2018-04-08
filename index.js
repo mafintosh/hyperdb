@@ -405,12 +405,12 @@ HyperDB.prototype._writer = function (dir, key, opts) {
   return writer
 
   function onremoteupdate () {
-    self.emit('remote-update', feed)
+    self.emit('remote-update', feed, writer._id)
   }
 
   function onappend () {
     for (var i = 0; i < self._watching.length; i++) self._watching[i]._kick()
-    self.emit('append', feed)
+    self.emit('append', feed, writer._id)
   }
 
   function addWriter (err) {
