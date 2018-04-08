@@ -239,6 +239,33 @@ tape('three writers, no conflicts, forks', function (t) {
   })
 })
 
+tape('replication to two new peers, only authorize one writer', function (t) {
+  var a = create.one()
+  a.ready(function () {
+    var b = create.one(a.key)
+    var c = create.one(a.key)
+
+    run(
+      cb => b.ready(cb),
+      cb => c.ready(cb),
+      cb => a.put('foo', 'bar', cb),
+      cb => a.authorize(b.local.key, cb),
+      cb => replicate(a, b, cb),
+      cb => replicate(a, c, cb),
+      done
+    )
+
+    function done (err) {
+      t.error(err, 'no error')
+      c.authorized(c.local.key, function (err, auth) {
+        t.error(err, 'no error')
+        t.notOk(auth)
+        t.end()
+      })
+    }
+  })
+})
+
 function range (n) {
   return Array(n).join(',').split(',').map((_, i) => '' + i)
 }
