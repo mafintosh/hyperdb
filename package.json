@@ -20,8 +20,10 @@
     "varint": "^5.0.0"
   },
   "devDependencies": {
+    "prettier": "^1.11.1",
     "protocol-buffers": "^4.0.4",
     "random-access-memory": "^2.4.0",
+    "seed-random": "^2.2.0",
     "standard": "^11.0.0",
     "stream-collector": "^1.0.1",
     "tape": "^4.9.0"
@@ -39,5 +41,10 @@
   "bugs": {
     "url": "https://github.com/mafintosh/hyperdb/issues"
   },
-  "homepage": "https://github.com/mafintosh/hyperdb#readme"
+  "homepage": "https://github.com/mafintosh/hyperdb#readme",
+  "standard": {
+    "ignore": [
+      "test/helpers/fuzzing.js"
+    ]
+  }
 }

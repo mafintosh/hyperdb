@@ -21,6 +21,7 @@ var put = require('./lib/put')
 var messages = require('./lib/messages')
 var trie = require('./lib/trie-encoding')
 var watch = require('./lib/watch')
+var normalizeKey = require('./lib/normalize')
 var derive = require('./lib/derive')
 
 module.exports = HyperDB
@@ -900,11 +901,6 @@ function indexOf (list, ptr) {
 
 function isOptions (opts) {
   return typeof opts === 'object' && !!opts && !Buffer.isBuffer(opts)
-}
-
-function normalizeKey (key) {
-  if (!key.length) return ''
-  return key[0] === '/' ? key.slice(1) : key
 }
 
 function createStorage (st) {
