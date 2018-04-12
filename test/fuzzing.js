@@ -22,7 +22,6 @@ tape.skip('fuzz testing', function (t) {
       replications: 1
     }, cb),
     function (err) {
-      console.log('HERE')
       t.error(err)
       t.end()
     }
