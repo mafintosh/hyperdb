@@ -12,6 +12,7 @@ var util = require('util')
 var bulk = require('bulk-write-stream')
 var events = require('events')
 var sodium = require('sodium-universal')
+var alru = require('array-lru')
 var hash = require('./lib/hash')
 var iterator = require('./lib/iterator')
 var differ = require('./lib/differ')
@@ -641,6 +642,7 @@ function Writer (db, feed) {
   this._decodeMap = []
   this._checkout = false
   this._length = 0
+  this._cache = alru(4096)
 }
 
 Writer.prototype.append = function (entry, cb) {
@@ -702,6 +704,9 @@ Writer.prototype._maybeUpdateFeeds = function () {
 Writer.prototype.get = function (seq, cb) {
   var self = this
 
+  var cached = this._cache.get(seq)
+  if (cached) return process.nextTick(cb, null, cached, this._id)
+
   this._feed.get(seq, function (err, val) {
     if (err) return cb(err)
 
@@ -716,6 +721,7 @@ Writer.prototype.get = function (seq, cb) {
       val.feed = self._id
       val.clock = self._mapList(val.clock, self._decodeMap, 0)
       val.trie = trie.decode(val.trie, self._decodeMap)
+      self._cache.set(val.seq, val)
       return cb(null, val, self._id)
     }
 
@@ -752,7 +758,10 @@ Writer.prototype._loadFeeds = function (head, cb) {
   }
 
   function done (msg) {
-    if (msg.seq < self._feedsLoaded) return cb(null, head, self._id)
+    if (msg.seq < self._feedsLoaded) {
+      self._cache.set(head.seq, head)
+      return cb(null, head, self._id)
+    }
 
     self._feedsLoaded = msg.seq
     self._feedsMessage = msg
@@ -781,6 +790,7 @@ Writer.prototype._addWriters = function (head, cb) {
     head.feed = self._id
     head.clock = self._mapList(head.clock, self._decodeMap, 0)
     head.trie = trie.decode(head.trie, self._decodeMap)
+    self._cache.set(head.seq, head)
     cb(null, head, id)
   }
 }
