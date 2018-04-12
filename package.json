@@ -20,7 +20,7 @@
     "varint": "^5.0.0"
   },
   "devDependencies": {
-    "prettier": "^1.11.1",
+    "prettier-standard": "^8.0.1",
     "protocol-buffers": "^4.0.4",
     "random-access-memory": "^2.4.0",
     "seed-random": "^2.2.0",
