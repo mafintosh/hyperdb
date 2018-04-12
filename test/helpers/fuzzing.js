@@ -225,6 +225,7 @@ function fuzzRunner (t, opts, cb) {
         // Also don't include the doRun callback in each batch
         var failingBatches = ops.slice(0, finished).map(batch => batch.slice(0, -1))
         generateFailingTest(opts.writers, writesPerReplication, failingBatches)
+        return cb(null)
       } else if (finished === ops.length) {
         return cb(null)
       }
