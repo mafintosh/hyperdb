@@ -414,18 +414,18 @@ HyperDB.prototype._writer = function (dir, key, opts) {
   function onwrite (index, data, peer, cb) {
     if (peer) peer.maxRequests++
     if (index >= writer._writeLength) writer._writeLength = index + 1
+    writer._writes.set(index, data)
     writer._decode(index, data, function (err, entry) {
-      if (err) return done(cb, peer, err)
-      writer._writes.set(index, entry)
+      if (err) return done(cb, index, peer, err)
       self._onwrite(entry, peer, function (err) {
-        writer._writes.delete(index)
-        done(cb, peer, err)
+        done(cb, index, peer, err)
       })
     })
   }
 
-  function done (cb, peer, err) {
+  function done (cb, index, peer, err) {
     if (peer) peer.maxRequests--
+    writer._writes.delete(index)
     cb(err)
   }
 
@@ -752,14 +752,18 @@ Writer.prototype.get = function (seq, cb) {
   var cached = this._cache.get(seq)
   if (cached) return process.nextTick(cb, null, cached, this._id)
 
-  if ((!this._feed.bitfield || !this._feed.has(seq)) && this._writes.has(seq)) {
-    return process.nextTick(cb, null, this._writes.get(seq), this._id)
-  }
-
-  this._feed.get(seq, function (err, val) {
+  this._getFeed(seq, function (err, val) {
     if (err) return cb(err)
     self._decode(seq, val, cb)
   })
+}
+
+Writer.prototype._getFeed = function (seq, cb) {
+  if (this._writes && this._writes.size) {
+    var buf = this._writes.get(seq)
+    if (buf) return process.nextTick(cb, null, buf)
+  }
+  this._feed.get(seq, cb)
 }
 
 Writer.prototype.head = function (cb) {
@@ -784,7 +788,7 @@ Writer.prototype._loadFeeds = function (head, buf, cb) {
 
   if (head.feeds) done(head)
   else if (head.inflate === head.seq) onfeeds(null, buf)
-  else this._feed.get(head.inflate, onfeeds)
+  else this._getFeed(head.inflate, onfeeds)
 
   function onfeeds (err, buf) {
     if (err) return cb(err)
