@@ -428,7 +428,7 @@ HyperDB.prototype._writer = function (dir, key, opts) {
   }
 
   function storage (name) {
-    return self._storage(dir + '/' + name)
+    return self._storage(dir + '/' + name, {feed})
   }
 }
 
@@ -816,7 +816,11 @@ Writer.prototype._ensureContentFeed = function (key) {
   if (this._db.contentFeeds) this._db.contentFeeds[this._id] = this._contentFeed
 
   function storage (name) {
-    return self._db._contentStorage('content/' + self._feed.discoveryKey.toString('hex') + '/' + name)
+    name = 'content/' + self._feed.discoveryKey.toString('hex') + '/' + name
+    return self._db._contentStorage(name, {
+      metadata: self._feed,
+      feed: self._contentFeed
+    })
   }
 }
 
