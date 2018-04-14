@@ -56,7 +56,9 @@ function HyperDB (storage, key, opts) {
   sodium.randombytes_buf(this.id)
 
   this._storage = createStorage(storage)
-  this._contentStorage = opts.contentFeed ? this._storage : null
+  this._contentStorage = typeof opts.contentFeed === 'function'
+    ? opts.contentFeed
+    : opts.contentFeed ? this._storage : null
   this._writers = checkout ? checkout._writers : []
   this._watching = checkout ? checkout._watching : []
   this._replicating = []
