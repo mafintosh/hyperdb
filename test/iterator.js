@@ -66,7 +66,7 @@ tape('empty prefix iteration', function (t) {
   })
 })
 
-tape.skip('prefix iterate a big db', function (t) {
+tape('prefix iterate a big db', function (t) {
   var db = create.one()
 
   var vals = range(1000, 'foo/#')
