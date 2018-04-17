@@ -84,7 +84,7 @@ tape.skip('prefix iterate a big db', function (t) {
   })
 })
 
-tape('non recursive iteration', function (t) {
+tape.skip('non recursive iteration', function (t) {
   var db = create.one()
 
   var vals = [
@@ -108,7 +108,7 @@ tape('non recursive iteration', function (t) {
   })
 })
 
-tape('mixed nested and non nexted iteration', function (t) {
+tape.skip('mixed nested and non nexted iteration', function (t) {
   var db = create.one()
   var vals = ['a', 'a/a', 'a/b', 'a/c', 'a/a/a', 'a/a/b', 'a/a/c']
   var expected = toMap(vals)
@@ -123,7 +123,7 @@ tape('mixed nested and non nexted iteration', function (t) {
   })
 })
 
-tape('two writers, simple fork', function (t) {
+tape.skip('two writers, simple fork', function (t) {
   t.plan(2 * 2 + 1)
 
   create.two(function (db1, db2, replicate) {
@@ -157,7 +157,7 @@ tape('two writers, simple fork', function (t) {
   })
 })
 
-tape('two writers, one fork', function (t) {
+tape.skip('two writers, one fork', function (t) {
   create.two(function (db1, db2, replicate) {
     run(
       cb => db1.put('0', '0', cb),
@@ -218,7 +218,7 @@ tape('two writers, one fork', function (t) {
   })
 })
 
-tape('two writers, one fork, many values', function (t) {
+tape.skip('two writers, one fork, many values', function (t) {
   var r = range(100, 'i')
 
   create.two(function (db1, db2, replicate) {
@@ -275,7 +275,7 @@ tape('two writers, one fork, many values', function (t) {
   })
 })
 
-tape('two writers, fork', function (t) {
+tape.skip('two writers, fork', function (t) {
   t.plan(2 * 2 + 1)
 
   create.two(function (a, b, replicate) {
@@ -302,7 +302,7 @@ tape('two writers, fork', function (t) {
   })
 })
 
-tape('three writers, two forks', function (t) {
+tape.skip('three writers, two forks', function (t) {
   t.plan(2 * 3 + 1)
 
   var replicate = require('./helpers/replicate')
@@ -333,7 +333,7 @@ tape('three writers, two forks', function (t) {
   })
 })
 
-tape('list buffers an iterator', function (t) {
+tape.skip('list buffers an iterator', function (t) {
   var db = create.one()
 
   put(db, ['a', 'b', 'b/c'], function (err) {
