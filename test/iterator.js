@@ -123,36 +123,6 @@ tape('mixed nested and non nexted iteration', function (t) {
   })
 })
 
-tape('lt iteration', function (t) {
-  var db = create.one()
-  var vals = ['a', 'b', 'c', 'a/b', 'a/c', 'b/a']
-
-  put(db, vals, function (err) {
-    t.error(err, 'no error')
-    all(db.iterator({ lt: 'b' }), function (err, map) {
-      t.error(err, 'no error')
-      var keys = Object.keys(map)
-      t.same(keys.sort(), ['a', 'a/b', 'a/c'], 'stopped before lt')
-      t.end()
-    })
-  })
-})
-
-tape('lte iteration', function (t) {
-  var db = create.one()
-  var vals = ['a', 'b', 'c', 'a/b', 'a/c', 'b/a']
-
-  put(db, vals, function (err) {
-    t.error(err, 'no error')
-    all(db.iterator({ lte: 'b' }), function (err, map) {
-      t.error(err, 'no error')
-      var keys = Object.keys(map)
-      t.same(keys.sort(), ['a', 'a/b', 'a/c', 'b'], 'stopped at lte')
-      t.end()
-    })
-  })
-})
-
 tape('two writers, simple fork', function (t) {
   t.plan(2 * 2 + 1)
 
