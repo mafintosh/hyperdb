@@ -759,7 +759,7 @@ Writer.prototype._loadFeeds = function (head, cb) {
 
   function done (msg) {
     if (head.inflate < self._feedsLoaded) {
-      self._cache.set(head.inflate, head)
+      self._cache.set(head.seq, head)
       return cb(null, head, self._id)
     }
 
