@@ -23,7 +23,8 @@
   "devDependencies": {
     "prettier": "^1.12.0",
     "protocol-buffers": "^4.0.4",
-    "random-access-memory": "^2.4.0",
+    "random-access-latency": "^1.0.0",
+    "random-access-memory": "^3.0.0",
     "seed-random": "^2.2.0",
     "standard": "^11.0.0",
     "stream-collector": "^1.0.1",

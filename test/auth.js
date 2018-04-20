@@ -113,3 +113,36 @@ tape('unauthorized writer fails "authorized" after some writes', function (t) {
     }
   })
 })
+
+tape('authorized is consistent', function (t) {
+  t.plan(5)
+
+  var a = create.one(null, {contentFeed: true})
+  a.ready(function () {
+    var b = create.one(a.key, {contentFeed: true, latency: 10})
+
+    run(
+      cb => b.put('bar', 'foo', cb),
+      cb => a.put('foo', 'bar', cb),
+      auth,
+      replicate.bind(null, a, b),
+      done
+    )
+
+    function done (err) {
+      t.error(err, 'no error')
+      a.authorized(b.local.key, function (err, auth) {
+        t.error(err, 'no error')
+        t.ok(auth)
+      })
+      b.authorized(b.local.key, function (err, auth) {
+        t.error(err, 'no error')
+        t.ok(auth)
+      })
+    }
+
+    function auth (cb) {
+      a.authorize(b.local.key, cb)
+    }
+  })
+})

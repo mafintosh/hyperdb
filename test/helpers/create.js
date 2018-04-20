@@ -1,5 +1,6 @@
 var hyperdb = require('../../')
 var ram = require('random-access-memory')
+var latency = require('random-access-latency')
 var replicate = require('./replicate')
 var reduce = (a, b) => a
 
@@ -7,7 +8,8 @@ exports.one = function (key, opts) {
   if (!opts) opts = {}
   opts.reduce = reduce
   opts.valueEncoding = opts.valueEncoding || 'utf-8'
-  return hyperdb(ram, key, opts)
+  var storage = opts.latency ? name => latency(opts.latency, ram()) : ram
+  return hyperdb(storage, key, opts)
 }
 
 exports.two = function (cb) {
