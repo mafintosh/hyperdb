@@ -758,11 +758,9 @@ Writer.prototype._loadFeeds = function (head, cb) {
   }
 
   function done (msg) {
-    msg.seq = head.inflate
-    if (msg.seq <= self._feedsLoaded) {
-      self._cache.set(head.seq, head)
-    } else {
-      self._feedsLoaded = msg.seq
+    var seq = head.inflate
+    if (seq > self._feedsLoaded) {
+      self._feedsLoaded = seq
       self._feedsMessage = msg
     }
     self._addWriters(head, cb)
