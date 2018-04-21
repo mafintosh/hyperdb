@@ -635,7 +635,7 @@ function Writer (db, feed) {
   this._contentFeed = null
   this._feeds = 0
   this._feedsMessage = null
-  this._feedsLoaded = 0
+  this._feedsLoaded = -1
   this._entry = 0
   this._clock = 0
   this._encodeMap = []
@@ -758,13 +758,13 @@ Writer.prototype._loadFeeds = function (head, cb) {
   }
 
   function done (msg) {
-    if (msg.seq < self._feedsLoaded) {
+    msg.seq = head.inflate
+    if (msg.seq <= self._feedsLoaded) {
       self._cache.set(head.seq, head)
-      return cb(null, head, self._id)
+    } else {
+      self._feedsLoaded = msg.seq
+      self._feedsMessage = msg
     }
-
-    self._feedsLoaded = msg.seq
-    self._feedsMessage = msg
     self._addWriters(head, cb)
   }
 }
