@@ -13,6 +13,7 @@ var bulk = require('bulk-write-stream')
 var events = require('events')
 var sodium = require('sodium-universal')
 var alru = require('array-lru')
+var inherits = require('inherits')
 var hash = require('./lib/hash')
 var iterator = require('./lib/iterator')
 var differ = require('./lib/differ')
@@ -80,7 +81,7 @@ function HyperDB (storage, key, opts) {
   this.ready()
 }
 
-util.inherits(HyperDB, events.EventEmitter)
+inherits(HyperDB, events.EventEmitter)
 
 HyperDB.prototype.batch = function (batch, cb) {
   if (!cb) cb = noop
@@ -315,7 +316,6 @@ HyperDB.prototype.replicate = function (opts) {
     if (stream.destroyed) return
 
     var i = 0
-    var j = 0
 
     self._replicating.push(replicate)
     stream.on('close', onclose)
@@ -323,22 +323,26 @@ HyperDB.prototype.replicate = function (opts) {
 
     replicate()
 
+    function oncontent () {
+      this._contentFeed.replicate(opts)
+    }
+
     function replicate () {
       for (; i < self.feeds.length; i++) {
         self.feeds[i].replicate(opts)
-      }
-
-      if (!self.contentFeeds) return
-
-      for (; j < self.contentFeeds.length; j++) {
-        if (!self.contentFeeds[j]) return
-        self.contentFeeds[j].replicate(opts)
+        if (!self.contentFeeds) continue
+        var w = self._writers[i]
+        if (w._contentFeed) w._contentFeed.replicate(opts)
+        else w.once('content-feed', oncontent)
       }
     }
 
     function onclose () {
       var i = self._replicating.indexOf(replicate)
       if (i > -1) remove(self._replicating, i)
+      for (i = 0; i < self._writers.length; i++) {
+        self._writers[i].removeListener('content-feed', oncontent)
+      }
     }
   }
 
@@ -651,6 +655,8 @@ HyperDB.prototype._ready = function (cb) {
 }
 
 function Writer (db, feed) {
+  events.EventEmitter.call(this)
+
   this._id = 0
   this._db = db
   this._feed = feed
@@ -669,7 +675,11 @@ function Writer (db, feed) {
 
   this._writes = new Map()
   this._writeLength = 0
+
+  this.setMaxListeners(0)
 }
+
+inherits(Writer, events.EventEmitter)
 
 Writer.prototype.append = function (entry, cb) {
   if (!this._clock) this._clock = this._feed.length
@@ -850,6 +860,7 @@ Writer.prototype._ensureContentFeed = function (key) {
   })
 
   if (this._db.contentFeeds) this._db.contentFeeds[this._id] = this._contentFeed
+  this.emit('content-feed')
 
   function storage (name) {
     name = 'content/' + self._feed.discoveryKey.toString('hex') + '/' + name
