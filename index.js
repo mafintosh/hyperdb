@@ -314,7 +314,7 @@ HyperDB.prototype.replicate = function (opts) {
     if (stream.destroyed) return
 
     var i = 0
-    var j = 0
+    var replicatingContentFeeds = []
 
     self._replicating.push(replicate)
     stream.on('close', onclose)
@@ -329,9 +329,12 @@ HyperDB.prototype.replicate = function (opts) {
 
       if (!self.contentFeeds) return
 
-      for (; j < self.contentFeeds.length; j++) {
-        if (!self.contentFeeds[j]) return
-        self.contentFeeds[j].replicate(opts)
+      for (var j = 0; j < self.contentFeeds.length; j++) {
+        if (!replicatingContentFeeds[j]) {
+          if (!self.contentFeeds[j]) continue
+          self.contentFeeds[j].replicate(opts)
+          replicatingContentFeeds[j] = true
+        }
       }
     }
 
@@ -454,6 +457,10 @@ HyperDB.prototype._pushWriter = function (writer) {
 
   if (!this.opened) return
 
+  this._updateReplicating()
+}
+
+HyperDB.prototype._updateReplicating = function () {
   for (var i = 0; i < this._replicating.length; i++) {
     this._replicating[i]()
   }
@@ -813,7 +820,10 @@ Writer.prototype._ensureContentFeed = function (key) {
     secretKey
   })
 
-  if (this._db.contentFeeds) this._db.contentFeeds[this._id] = this._contentFeed
+  if (this._db.contentFeeds) {
+    this._db.contentFeeds[this._id] = this._contentFeed
+    this._db._updateReplicating()
+  }
 
   function storage (name) {
     name = 'content/' + self._feed.discoveryKey.toString('hex') + '/' + name
@@ -829,9 +839,7 @@ Writer.prototype._updateFeeds = function () {
 
   if (this._feedsMessage.contentFeed && this._db.contentFeeds && !this._contentFeed) {
     this._ensureContentFeed(this._feedsMessage.contentFeed)
-    for (i = 0; i < this._db._replicating.length; i++) {
-      this._db._replicating[i]()
-    }
+    this._db._updateReplicating()
   }
 
   var writers = this._feedsMessage.feeds || []
