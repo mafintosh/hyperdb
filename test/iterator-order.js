@@ -107,7 +107,6 @@ function testTwoFeedsWithKeys (t, keys, opts, cb) {
 
 function testIteratorOrder (t, iterator, expected, sortFunc, done) {
   var sorted = expected.slice(0).sort(sortFunc)
-  console.log('sorted:', sorted)
   each(iterator, onEach, onDone)
   function onEach (err, node) {
     t.error(err, 'no error')
