@@ -747,7 +747,7 @@ Writer.prototype._decode = function (seq, buf, cb) {
   if (this._feedsMessage && this._feedsLoaded === val.inflate) {
     this._maybeUpdateFeeds()
     val.feed = this._id
-    if (val.clock.length !== this._decodeMap.length) {
+    if (val.clock.length > this._decodeMap.length) {
       return cb(new Error('Missing feed mappings'))
     }
     val.clock = this._mapList(val.clock, this._decodeMap, 0)
@@ -837,7 +837,7 @@ Writer.prototype._addWriters = function (head, cb) {
     if (error) return cb(error)
     self._updateFeeds()
     head.feed = self._id
-    if (head.clock.length !== self._decodeMap.length) {
+    if (head.clock.length > self._decodeMap.length) {
       return cb(new Error('Missing feed mappings'))
     }
     head.clock = self._mapList(head.clock, self._decodeMap, 0)
