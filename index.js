@@ -808,7 +808,7 @@ Writer.prototype._loadFeeds = function (head, buf, cb) {
   function done (msg) {
     var seq = head.inflate
     if (seq > self._feedsLoaded) {
-      self._feedsLoaded = seq
+      self._feedsLoaded = self._feeds = seq
       self._feedsMessage = msg
     }
     self._addWriters(head, cb)
