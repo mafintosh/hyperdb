@@ -732,9 +732,13 @@ Writer.prototype._needsInflate = function () {
 
 Writer.prototype._maybeUpdateFeeds = function () {
   if (!this._feedsMessage) return
-  if (this._decodeMap.length === this._db.feeds.length) return
-  if (this._encodeMap.length === this._db.feeds.length) return
-  this._updateFeeds()
+  var writers = this._feedsMessage.feeds || []
+  if (
+    this._decodeMap.length !== writers.length ||
+    this._encodeMap.length !== this._db.feeds.length
+  ) {
+    this._updateFeeds()
+  }
 }
 
 Writer.prototype._decode = function (seq, buf, cb) {
