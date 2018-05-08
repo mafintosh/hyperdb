@@ -817,10 +817,10 @@ Writer.prototype._loadFeeds = function (head, buf, cb) {
   }
 }
 
-Writer.prototype._addWriters = function (head, msg, cb) {
+Writer.prototype._addWriters = function (head, inflated, cb) {
   var self = this
   var id = this._id
-  var writers = msg.feeds || []
+  var writers = inflated.feeds || []
   var missing = writers.length + 1
   var error = null
 
@@ -837,7 +837,7 @@ Writer.prototype._addWriters = function (head, msg, cb) {
     var seq = head.inflate
     if (seq > self._feedsLoaded) {
       self._feedsLoaded = self._feeds = seq
-      self._feedsMessage = msg
+      self._feedsMessage = inflated
     }
     self._updateFeeds()
     head.feed = self._id
