@@ -83,7 +83,7 @@ tape('remote watch', function (t) {
 
 tape('watch with 3rd-party authorize', function (t) {
   create.two(function (a, b) {
-    t.plan(2)
+    t.plan(3) // once per writer updated in the namespace (b.auth and c.put) and .error
 
     a.watch(function () {
       t.pass('watch called')
