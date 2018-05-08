@@ -813,19 +813,14 @@ Writer.prototype._loadFeeds = function (head, buf, cb) {
   }
 
   function done (msg) {
-    var seq = head.inflate
-    if (seq > self._feedsLoaded) {
-      self._feedsLoaded = self._feeds = seq
-      self._feedsMessage = msg
-    }
-    self._addWriters(head, cb)
+    self._addWriters(head, msg, cb)
   }
 }
 
-Writer.prototype._addWriters = function (head, cb) {
+Writer.prototype._addWriters = function (head, msg, cb) {
   var self = this
   var id = this._id
-  var writers = this._feedsMessage.feeds || []
+  var writers = msg.feeds || []
   var missing = writers.length + 1
   var error = null
 
@@ -839,6 +834,11 @@ Writer.prototype._addWriters = function (head, cb) {
     if (err) error = err
     if (--missing) return
     if (error) return cb(error)
+    var seq = head.inflate
+    if (seq > self._feedsLoaded) {
+      self._feedsLoaded = self._feeds = seq
+      self._feedsMessage = msg
+    }
     self._updateFeeds()
     head.feed = self._id
     if (head.clock.length > self._decodeMap.length) {
