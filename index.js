@@ -77,6 +77,7 @@ function HyperDB (storage, key, opts) {
   this._secretKey = opts.secretKey || null
   this._storeSecretKey = opts.storeSecretKey !== false
   this._onwrite = opts.onwrite || null
+  this._authorized = []
 
   this.ready()
 }
@@ -293,7 +294,7 @@ HyperDB.prototype.replicate = function (opts) {
   if (!opts) opts = {}
 
   var self = this
-  var expectedFeeds = this._writers.length
+  var expectedFeeds = Math.max(1, this._authorized.length)
   var factor = this.contentFeeds ? 2 : 1
 
   opts.expectedFeeds = expectedFeeds * factor
@@ -306,14 +307,14 @@ HyperDB.prototype.replicate = function (opts) {
 
   this.ready(onready)
 
-  // bootstrap content feeds
-  if (this.contentFeeds && !this.contentFeeds[0]) this._writers[0].get(0, noop)
-
   return stream
 
   function onready (err) {
     if (err) return stream.destroy(err)
     if (stream.destroyed) return
+
+    // bootstrap content feeds
+    if (self.contentFeeds && !self.contentFeeds[0]) self._writers[0].get(0, noop)
 
     var i = 0
 
@@ -328,10 +329,11 @@ HyperDB.prototype.replicate = function (opts) {
     }
 
     function replicate () {
-      for (; i < self.feeds.length; i++) {
-        self.feeds[i].replicate(opts)
+      for (; i < self._authorized.length; i++) {
+        var j = self._authorized[i]
+        self.feeds[j].replicate(opts)
         if (!self.contentFeeds) continue
-        var w = self._writers[i]
+        var w = self._writers[j]
         if (w._contentFeed) w._contentFeed.replicate(opts)
         else w.once('content-feed', oncontent)
       }
@@ -349,7 +351,7 @@ HyperDB.prototype.replicate = function (opts) {
   function prefinalize (cb) {
     self.heads(function (err) {
       if (err) return cb(err)
-      stream.expectedFeeds += factor * (self._writers.length - expectedFeeds)
+      stream.expectedFeeds += factor * (self._authorized.length - expectedFeeds)
       expectedFeeds = self._writers.length
       cb()
     })
@@ -571,6 +573,7 @@ HyperDB.prototype._ready = function (cb) {
 
     self.key = self.source.key
     self.discoveryKey = self.source.discoveryKey
+    self._writers[0].authorize() // source is always authorized
 
     self.local.ready(function (err) {
       if (err) return done(err)
@@ -670,6 +673,7 @@ function Writer (db, feed) {
   this._decodeMap = []
   this._checkout = false
   this._length = 0
+  this._authorized = false
 
   this._cache = alru(4096)
 
@@ -680,6 +684,13 @@ function Writer (db, feed) {
 }
 
 inherits(Writer, events.EventEmitter)
+
+Writer.prototype.authorize = function () {
+  if (this._authorized) return
+  this._authorized = true
+  this._db._authorized.push(this._id)
+  if (this._feedsMessage) this._updateFeeds()
+}
 
 Writer.prototype.append = function (entry, cb) {
   if (!this._clock) this._clock = this._feed.length
@@ -883,12 +894,11 @@ Writer.prototype._ensureContentFeed = function (key) {
 
 Writer.prototype._updateFeeds = function () {
   var i
+  var updateReplicates = false
 
   if (this._feedsMessage.contentFeed && this._db.contentFeeds && !this._contentFeed) {
     this._ensureContentFeed(this._feedsMessage.contentFeed)
-    for (i = 0; i < this._db._replicating.length; i++) {
-      this._db._replicating[i]()
-    }
+    updateReplicates = true
   }
 
   var writers = this._feedsMessage.feeds || []
@@ -902,6 +912,16 @@ Writer.prototype._updateFeeds = function () {
     var id = map.get(writers[i].key.toString('hex'))
     this._decodeMap[i] = id
     this._encodeMap[id] = i
+    if (this._authorized) {
+      this._db._writers[id].authorize()
+      updateReplicates = true
+    }
+  }
+
+  if (!updateReplicates) return
+
+  for (i = 0; i < this._db._replicating.length; i++) {
+    this._db._replicating[i]()
   }
 }
 
