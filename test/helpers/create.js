@@ -5,9 +5,11 @@ var reduce = (a, b) => a
 
 exports.one = function (key, opts) {
   if (!opts) opts = {}
-  opts.reduce = reduce
-  opts.valueEncoding = opts.valueEncoding || 'utf-8'
-  return hyperdb(ram, key, opts)
+  var options = opts = Object.assign({
+    reduce,
+    valueEncoding: 'utf-8'
+  }, opts)
+  return hyperdb(ram, key, options)
 }
 
 exports.two = function (opts, cb) {
