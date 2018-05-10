@@ -66,6 +66,19 @@ Options include:
 }
 ```
 
+#### `db.key`
+
+Buffer containing the public key identifying this hyperdb.
+
+Populated after `ready` has been emitted. May be `null` before the event.
+
+#### `db.discoveryKey`
+
+Buffer containing a key derived from the db.key.
+In contrast to `db.key` this key does not allow you to verify the data but can be used to announce or look for peers that are sharing the same hyperdb, without leaking the hyperdb key.
+
+Populated after `ready` has been emitted. May be `null` before the event.
+
 #### `db.on('ready')`
 
 Emitted exactly once: when the db is fully ready and all static properties have

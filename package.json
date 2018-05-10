@@ -1,13 +1,13 @@
 {
   "name": "hyperdb",
-  "version": "3.0.0-2",
+  "version": "3.0.0-3",
   "description": "Distributed scalable database",
   "main": "index.js",
   "dependencies": {
     "array-lru": "^1.1.1",
     "bulk-write-stream": "^1.1.3",
     "codecs": "^1.2.1",
-    "hypercore": "^6.12.6",
+    "hypercore": "^6.13.0",
     "hypercore-protocol": "^6.6.4",
     "inherits": "^2.0.3",
     "mutexify": "^1.2.0",
@@ -23,7 +23,8 @@
   "devDependencies": {
     "prettier": "^1.12.0",
     "protocol-buffers": "^4.0.4",
-    "random-access-memory": "^2.4.0",
+    "random-access-latency": "^1.0.0",
+    "random-access-memory": "^3.0.0",
     "seed-random": "^2.2.0",
     "standard": "^11.0.0",
     "stream-collector": "^1.0.1",

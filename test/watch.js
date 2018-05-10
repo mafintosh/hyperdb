@@ -1,6 +1,7 @@
 var tape = require('tape')
 var create = require('./helpers/create')
 var replicate = require('./helpers/replicate')
+var run = require('./helpers/run')
 
 tape('basic watch', function (t) {
   var db = create.one()
@@ -76,6 +77,34 @@ tape('remote watch', function (t) {
       })
 
       replicate(db, clone)
+    })
+  })
+})
+
+tape('watch with 3rd-party authorize', function (t) {
+  create.two(function (a, b) {
+    t.plan(3) // once per writer updated in the namespace (b.auth and c.put) and .error
+
+    a.watch(function () {
+      t.pass('watch called')
+    })
+
+    var c = create.one(a.key)
+    c.ready(function () {
+      run(
+        cb => replicate(a, b, cb),
+        cb => replicate(b, c, cb),
+        cb => b.authorize(c.local.key, cb),
+        cb => replicate(b, c, cb),
+        cb => c.put('hello2', 'world2', cb),
+        cb => replicate(b, c, cb),
+        cb => replicate(a, b, cb),
+        done
+      )
+
+      function done (err) {
+        t.error(err, 'no error')
+      }
     })
   })
 })

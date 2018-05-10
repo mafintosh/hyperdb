@@ -266,6 +266,37 @@ tape('replication to two new peers, only authorize one writer', function (t) {
   })
 })
 
+tape('2 unauthed clones', function (t) {
+  t.plan(1 + 2 * 2)
+
+  var db = create.one(null)
+
+  db.ready(function () {
+    var clone1 = create.one(db.key)
+    var clone2 = create.one(db.key)
+
+    run(
+      cb => db.put('hello', 'world', cb),
+      cb => clone1.ready(cb),
+      cb => replicate(db, clone1, cb),
+      cb => clone2.ready(cb),
+      cb => replicate(clone1, clone2, cb),
+      done
+    )
+
+    function done (err) {
+      t.error(err, 'no error')
+      clone1.get('hello', onhello)
+      clone2.get('hello', onhello)
+
+      function onhello (err, node) {
+        t.error(err, 'no error')
+        t.same(node.value, 'world')
+      }
+    }
+  })
+})
+
 function range (n) {
   return Array(n).join(',').split(',').map((_, i) => '' + i)
 }
