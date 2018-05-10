@@ -31,12 +31,13 @@ function runIterationOrderSuite (opts) {
 
 function testAllCases (opts, cb) {
   var sorter = getSortFunction(opts)
+  var tag = opts.lexint ? 'lexint' : 'hash'
   Object.keys(cases).forEach((key) => {
-    tape('iterator is hash order sorted (' + key + ')', function (t) {
+    tape('iterator is ' + tag + ' order sorted (' + key + ')', function (t) {
       var keysToTest = cases[key]
       run(
-        cb => testSingleFeedWithKeys(t, sorter, keysToTest, cb),
-        cb => testTwoFeedsWithKeys(t, sorter, keysToTest, cb),
+        cb => testSingleFeedWithKeys(t, opts, sorter, keysToTest, cb),
+        cb => testTwoFeedsWithKeys(t, opts, sorter, keysToTest, cb),
         cb => t.end()
       )
     })
@@ -53,7 +54,10 @@ function fullyVisitFolder (opts, cb) {
 
       ite.next(function loop (err, val) {
         t.error(err, 'no error')
-        if (!val) return t.end()
+        if (!val) {
+          t.end()
+          return cb()
+        }
 
         if (val.key[0] === 'b') {
           t.same(val.key, 'b/c')
@@ -79,18 +83,18 @@ function fullyVisitFolder (opts, cb) {
   })
 }
 
-function testSingleFeedWithKeys (t, sorter, keys, cb) {
+function testSingleFeedWithKeys (t, opts, sorter, keys, cb) {
   t.comment('with single feed')
-  var db = create.one()
+  var db = create.one(null, opts)
   put(db, keys, function (err) {
     t.error(err, 'no error')
     testIteratorOrder(t, sorter, db.iterator(), keys, cb)
   })
 }
 
-function testTwoFeedsWithKeys (t, sorter, keys, cb) {
+function testTwoFeedsWithKeys (t, opts, sorter, keys, cb) {
   t.comment('with values split across two feeds')
-  create.two(function (db1, db2, replicate) {
+  create.two(opts, function (db1, db2, replicate) {
     var half = Math.floor(keys.length / 2)
     run(
       cb => put(db1, keys.slice(0, half), cb),
