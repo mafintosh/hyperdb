@@ -6,22 +6,32 @@ var reduce = (a, b) => a
 
 exports.one = function (key, opts) {
   if (!opts) opts = {}
-  opts.reduce = reduce
-  opts.valueEncoding = opts.valueEncoding || 'utf-8'
-  var storage = opts.latency ? name => latency(opts.latency, ram()) : ram
-  return hyperdb(storage, key, opts)
+  var options = Object.assign({
+    reduce,
+    valueEncoding: 'utf-8'
+  }, opts)
+  var storage = options.latency ? name => latency(options.latency, ram()) : ram
+  return hyperdb(storage, key, options)
 }
 
-exports.two = function (cb) {
-  createMany(2, function (err, dbs, replicateByIndex) {
+exports.two = function (opts, cb) {
+  if (typeof opts === 'function') {
+    cb = opts
+    opts = {}
+  }
+  createMany(2, opts, function (err, dbs, replicateByIndex) {
     if (err) return cb(err)
     dbs.push(replicateByIndex.bind(null, [0, 1]))
     return cb.apply(null, dbs)
   })
 }
 
-exports.three = function (cb) {
-  createMany(3, function (err, dbs, replicateByIndex) {
+exports.three = function (opts, cb) {
+  if (typeof opts === 'function') {
+    cb = opts
+    opts = {}
+  }
+  createMany(3, opts, function (err, dbs, replicateByIndex) {
     if (err) return cb(err)
     dbs.push(replicateByIndex.bind(null, [0, 1, 2]))
     return cb.apply(null, dbs)
@@ -30,11 +40,15 @@ exports.three = function (cb) {
 
 exports.many = createMany
 
-function createMany (count, cb) {
+function createMany (count, opts, cb) {
+  if (typeof opts === 'function') return createMany(count, {}, opts)
+
   var dbs = []
   var remaining = count - 1
 
-  var first = hyperdb(ram, { valueEncoding: 'utf-8' })
+  var options = Object.assign({}, { valueEncoding: 'utf-8' }, opts)
+
+  var first = hyperdb(ram, options)
   first.ready(function (err) {
     if (err) return cb(err)
     dbs.push(first)
@@ -49,7 +63,7 @@ function createMany (count, cb) {
         return cb(null, dbs, replicateByIndex)
       })
     }
-    var db = hyperdb(ram, first.key, { valueEncoding: 'utf-8' })
+    var db = hyperdb(ram, first.key, options)
     db.ready(function (err) {
       if (err) return cb(err)
       first.authorize(db.local.key, function (err) {

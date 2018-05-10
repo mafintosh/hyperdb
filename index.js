@@ -13,8 +13,8 @@ var bulk = require('bulk-write-stream')
 var events = require('events')
 var sodium = require('sodium-universal')
 var alru = require('array-lru')
+var pathBuilder = require('./lib/path')
 var inherits = require('inherits')
-var hash = require('./lib/hash')
 var iterator = require('./lib/iterator')
 var differ = require('./lib/differ')
 var history = require('./lib/history')
@@ -56,6 +56,7 @@ function HyperDB (storage, key, opts) {
   this.id = Buffer.alloc(32)
   sodium.randombytes_buf(this.id)
 
+  this._path = pathBuilder(opts)
   this._storage = createStorage(storage)
   this._contentStorage = typeof opts.contentFeed === 'function'
     ? opts.contentFeed
@@ -106,7 +107,7 @@ HyperDB.prototype.batch = function (batch, cb) {
         if (err) return done(err)
 
         if (node) {
-          node.path = hash(node.key, true)
+          node.path = self._path(node.key, true)
           heads = [node]
         }
 
@@ -756,7 +757,7 @@ Writer.prototype._decode = function (seq, buf, cb) {
   var val = messages.Entry.decode(buf)
   val[util.inspect.custom] = inspect
   val.seq = seq
-  val.path = hash(val.key, true)
+  val.path = this._db._path(val.key, true)
   val.value = val.value && this._db._valueEncoding.decode(val.value)
 
   if (this._feedsMessage && this._feedsLoaded === val.inflate) {
