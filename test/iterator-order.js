@@ -2,12 +2,15 @@ var tape = require('tape')
 var create = require('./helpers/create')
 var put = require('./helpers/put')
 var run = require('./helpers/run')
-var hash = require('../lib/hash')
+var pathBuilder = require('../lib/path')
 
-function sortByHash (a, b) {
-  var ha = hash(typeof a === 'string' ? a : a.key).join('')
-  var hb = hash(typeof b === 'string' ? b : b.key).join('')
-  return ha.localeCompare(hb)
+function getSortFunction (opts) {
+  var path = pathBuilder(opts)
+  return function (a, b) {
+    var ha = path(typeof a === 'string' ? a : a.key).join('')
+    var hb = path(typeof b === 'string' ? b : b.key).join('')
+    return ha.localeCompare(hb)
+  }
 }
 
 const cases = {
@@ -16,61 +19,76 @@ const cases = {
   '3 paths deep': ['a', 'a/a', 'a/b', 'a/c', 'a/a/a', 'a/a/b', 'a/a/c']
 }
 
-Object.keys(cases).forEach((key) => {
-  tape('iterator is hash order sorted (' + key + ')', function (t) {
-    var keysToTest = cases[key]
-    run(
-      cb => testSingleFeedWithKeys(t, keysToTest, cb),
-      cb => testTwoFeedsWithKeys(t, keysToTest, cb),
-      cb => t.end()
-    )
-  })
-})
+runIterationOrderSuite({ lexint: false })
+runIterationOrderSuite({ lexint: true })
 
-tape('fully visit a folder before visiting the next one', function (t) {
-  t.plan(12)
-  var db = create.one()
-  put(db, ['a', 'a/b', 'a/b/c', 'b/c', 'b/c/d'], function (err) {
-    t.error(err, 'no error')
-    var ite = db.iterator()
+function runIterationOrderSuite (opts) {
+  run(
+    cb => fullyVisitFolder(opts, cb),
+    cb => testAllCases(opts, cb)
+  )
+}
 
-    ite.next(function loop (err, val) {
-      t.error(err, 'no error')
-      if (!val) return t.end()
-
-      if (val.key[0] === 'b') {
-        t.same(val.key, 'b/c')
-        ite.next(function (err, val) {
-          t.error(err, 'no error')
-          t.same(val.key, 'b/c/d')
-          ite.next(loop)
-        })
-      } else {
-        t.same(val.key, 'a')
-        ite.next(function (err, val) {
-          t.error(err, 'no error')
-          t.same(val.key, 'a/b')
-          ite.next(function (err, val) {
-            t.error(err, 'no error')
-            t.same(val.key, 'a/b/c')
-            ite.next(loop)
-          })
-        })
-      }
+function testAllCases (opts, cb) {
+  var sorter = getSortFunction(opts)
+  Object.keys(cases).forEach((key) => {
+    tape('iterator is hash order sorted (' + key + ')', function (t) {
+      var keysToTest = cases[key]
+      run(
+        cb => testSingleFeedWithKeys(t, sorter, keysToTest, cb),
+        cb => testTwoFeedsWithKeys(t, sorter, keysToTest, cb),
+        cb => t.end()
+      )
     })
   })
-})
+}
 
-function testSingleFeedWithKeys (t, keys, cb) {
+function fullyVisitFolder (opts, cb) {
+  tape('fully visit a folder before visiting the next one', function (t) {
+    t.plan(12)
+    var db = create.one(null, opts)
+    put(db, ['a', 'a/b', 'a/b/c', 'b/c', 'b/c/d'], function (err) {
+      t.error(err, 'no error')
+      var ite = db.iterator()
+
+      ite.next(function loop (err, val) {
+        t.error(err, 'no error')
+        if (!val) return t.end()
+
+        if (val.key[0] === 'b') {
+          t.same(val.key, 'b/c')
+          ite.next(function (err, val) {
+            t.error(err, 'no error')
+            t.same(val.key, 'b/c/d')
+            ite.next(loop)
+          })
+        } else {
+          t.same(val.key, 'a')
+          ite.next(function (err, val) {
+            t.error(err, 'no error')
+            t.same(val.key, 'a/b')
+            ite.next(function (err, val) {
+              t.error(err, 'no error')
+              t.same(val.key, 'a/b/c')
+              ite.next(loop)
+            })
+          })
+        }
+      })
+    })
+  })
+}
+
+function testSingleFeedWithKeys (t, sorter, keys, cb) {
   t.comment('with single feed')
   var db = create.one()
   put(db, keys, function (err) {
     t.error(err, 'no error')
-    testIteratorOrder(t, db.iterator(), keys, cb)
+    testIteratorOrder(t, sorter, db.iterator(), keys, cb)
   })
 }
 
-function testTwoFeedsWithKeys (t, keys, cb) {
+function testTwoFeedsWithKeys (t, sorter, keys, cb) {
   t.comment('with values split across two feeds')
   create.two(function (db1, db2, replicate) {
     var half = Math.floor(keys.length / 2)
@@ -78,8 +96,8 @@ function testTwoFeedsWithKeys (t, keys, cb) {
       cb => put(db1, keys.slice(0, half), cb),
       cb => put(db2, keys.slice(half), cb),
       cb => replicate(cb),
-      cb => testIteratorOrder(t, db1.iterator(), keys, cb),
-      cb => testIteratorOrder(t, db2.iterator(), keys, cb),
+      cb => testIteratorOrder(t, sorter, db1.iterator(), keys, cb),
+      cb => testIteratorOrder(t, sorter, db2.iterator(), keys, cb),
       done
     )
   })
@@ -89,8 +107,8 @@ function testTwoFeedsWithKeys (t, keys, cb) {
   }
 }
 
-function testIteratorOrder (t, iterator, expected, done) {
-  var sorted = expected.slice(0).sort(sortByHash)
+function testIteratorOrder (t, sorter, iterator, expected, done) {
+  var sorted = expected.slice(0).sort(sorter)
   each(iterator, onEach, onDone)
   function onEach (err, node) {
     t.error(err, 'no error')
