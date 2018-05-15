@@ -440,3 +440,37 @@ tape('create with precreated keypair', function (t) {
     })
   })
 })
+
+tape('can insert falsy values', function (t) {
+  t.plan(2 * 2 + 3 + 1)
+
+  var db = create.one(null, {valueEncoding: 'json'})
+
+  db.put('hello', 0, function () {
+    db.put('world', false, function () {
+      db.get('hello', function (err, node) {
+        t.error(err, 'no error')
+        t.same(node && node.value, 0)
+      })
+      db.get('world', function (err, node) {
+        t.error(err, 'no error')
+        t.same(node && node.value, false)
+      })
+
+      var ite = db.iterator()
+      var result = {}
+
+      ite.next(function loop (err, node) {
+        t.error(err, 'no error')
+
+        if (!node) {
+          t.same(result, {hello: 0, world: false})
+          return
+        }
+
+        result[node.key] = node.value
+        ite.next(loop)
+      })
+    })
+  })
+})

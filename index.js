@@ -725,7 +725,7 @@ Writer.prototype.append = function (entry, cb) {
   mapped.clock = this._mapList(entry.clock, this._encodeMap, 0)
   mapped.inflate = this._feeds
   mapped.trie = trie.encode(entry.trie, this._encodeMap)
-  if (entry.value) mapped.value = this._db._valueEncoding.encode(entry.value)
+  if (entry.value !== null) mapped.value = this._db._valueEncoding.encode(entry.value)
 
   if (this._db._batching) {
     this._db._batching.push(enc.encode(mapped))
