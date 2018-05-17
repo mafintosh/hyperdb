@@ -1,4 +1,5 @@
 var tape = require('tape')
+var cmp = require('compare')
 var create = require('./helpers/create')
 var put = require('./helpers/put')
 var run = require('./helpers/run')
@@ -7,7 +8,7 @@ var hash = require('../lib/hash')
 function sortByHash (a, b) {
   var ha = hash(typeof a === 'string' ? a : a.key).join('')
   var hb = hash(typeof b === 'string' ? b : b.key).join('')
-  return ha.localeCompare(hb)
+  return cmp(ha, hb)
 }
 
 function reverseSortByHash (a, b) {

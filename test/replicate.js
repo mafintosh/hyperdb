@@ -1,4 +1,5 @@
 var tape = require('tape')
+var cmp = require('compare')
 var create = require('./helpers/create')
 var run = require('./helpers/run')
 var replicate = require('./helpers/replicate')
@@ -75,12 +76,12 @@ tape('two writers, one conflict', function (t) {
 
       function onb (err, nodes) {
         t.error(err, 'no error')
-        nodes.sort((a, b) => a.value.localeCompare(b.value))
+        nodes.sort((a, b) => cmp(a.value, b.value))
         t.same(nodes.length, 2)
         t.same(nodes[0].key, 'b')
-        t.same(nodes[0].value, 'b')
+        t.same(nodes[0].value, 'B')
         t.same(nodes[1].key, 'b')
-        t.same(nodes[1].value, 'B')
+        t.same(nodes[1].value, 'b')
       }
 
       function ona (err, nodes) {
@@ -185,7 +186,7 @@ tape('two writers, simple fork', function (t) {
     function on1 (err, nodes) {
       t.error(err, 'no error')
       t.same(nodes.length, 2)
-      nodes.sort((a, b) => a.value.localeCompare(b.value))
+      nodes.sort((a, b) => cmp(a.value, b.value))
       t.same(nodes[0].key, '1')
       t.same(nodes[0].value, '1a')
       t.same(nodes[1].key, '1')

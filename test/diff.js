@@ -1,4 +1,5 @@
 var tape = require('tape')
+var cmp = require('compare')
 var collect = require('stream-collector')
 var create = require('./helpers/create')
 var replicate = require('./helpers/replicate')
@@ -261,11 +262,11 @@ function range (n) {
 }
 
 function sortByValue (a, b) {
-  return a.value.localeCompare(b.value)
+  return cmp(a.value, b.value)
 }
 
 function sort (a, b) {
   var ak = (a.left || a.right).key
   var bk = (b.left || b.right).key
-  return ak.localeCompare(bk)
+  return cmp(ak, bk)
 }
