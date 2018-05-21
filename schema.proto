@@ -19,3 +19,7 @@ message InflatedEntry {
   repeated Feed feeds = 6;
   optional bytes contentFeed = 7;
 }
+
+message Header {
+  required string protocol = 1;
+}
