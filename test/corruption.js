@@ -27,11 +27,11 @@ tape('feed with corrupted inflate generates error', function (t) {
     }
 
     function corruptInflateRecord (cb) {
-      var index = 2
+      var index = 3
       a.source.get(index, function (err, data) {
         t.error(err, 'no error')
         var val = messages.Entry.decode(data)
-        val.inflate = 0 // Introduce corruption
+        val.inflate = 1 // Introduce corruption
         var corruptData = messages.Entry.encode(val)
         var storage = a.source._storage
         storage.dataOffset(index, [], function (err, offset, size) {
