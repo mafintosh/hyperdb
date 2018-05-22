@@ -1,6 +1,7 @@
 message Entry {
   required string key = 1;
   optional bytes value = 2;
+  optional bool deleted = 8;
   required bytes trie = 3;
   repeated uint64 clock = 4;
   optional uint64 inflate = 5;
@@ -13,6 +14,7 @@ message InflatedEntry {
 
   required string key = 1;
   optional bytes value = 2;
+  optional bool deleted = 8;
   required bytes trie = 3;
   repeated uint64 clock = 4;
   optional uint64 inflate = 5;

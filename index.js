@@ -722,6 +722,7 @@ Writer.prototype.append = function (entry, cb) {
   var mapped = {
     key: entry.key,
     value: null,
+    deleted: entry.deleted,
     inflate: 0,
     clock: null,
     trie: null,
