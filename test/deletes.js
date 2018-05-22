@@ -93,8 +93,8 @@ tape('delete marks node as deleted', function (t) {
   db.put('hello', 'world', function () {
     db.del('hello', function () {
       db.createHistoryStream()
-        .on('data', function ({key, value, deleted}) {
-          t.same({key, value, deleted}, expected.shift())
+        .on('data', function (data) {
+          t.same({key: data.key, value: data.value, deleted: data.deleted}, expected.shift())
         })
         .on('end', function () {
           t.same(expected.length, 0)
