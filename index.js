@@ -843,7 +843,7 @@ Writer.prototype._loadFeeds = function (head, buf, cb) {
     } catch (e) {
       return cb(e)
     }
-    done(messages.InflatedEntry.decode(buf))
+    done(msg)
   }
 
   function done (msg) {
