@@ -1,6 +1,6 @@
 {
   "name": "hyperdb",
-  "version": "3.0.0-4",
+  "version": "3.0.0",
   "description": "Distributed scalable database",
   "main": "index.js",
   "dependencies": {
