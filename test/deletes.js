@@ -85,3 +85,21 @@ tape('delete one in many (iteration)', function (t) {
     })
   }
 })
+
+tape('delete marks node as deleted', function (t) {
+  var db = create.one()
+  var expected = [{key: 'hello', value: 'world', deleted: false}, {key: 'hello', value: null, deleted: true}]
+
+  db.put('hello', 'world', function () {
+    db.del('hello', function () {
+      db.createHistoryStream()
+        .on('data', function (data) {
+          t.same({key: data.key, value: data.value, deleted: data.deleted}, expected.shift())
+        })
+        .on('end', function () {
+          t.same(expected.length, 0)
+          t.end()
+        })
+    })
+  })
+})
