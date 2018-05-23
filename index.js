@@ -314,7 +314,7 @@ HyperDB.prototype.replicate = function (opts) {
     if (stream.destroyed) return
 
     // bootstrap content feeds
-    if (self.contentFeeds && !self.contentFeeds[0]) self._writers[0].get(0, noop)
+    if (self.contentFeeds && !self.contentFeeds[0]) self._writers[0].get(1, noop)
 
     var i = 0
 
@@ -595,9 +595,14 @@ HyperDB.prototype._ready = function (cb) {
 
   function done (err) {
     if (err) return cb(err)
-    self.opened = true
-    self.emit('ready')
-    cb(null)
+    self._localWriter.ensureHeader(onheader)
+
+    function onheader (err) {
+      if (err) return cb(err)
+      self.opened = true
+      self.emit('ready')
+      cb(null)
+    }
   }
 
   function feed (dir, key, feedOpts) {
@@ -649,6 +654,7 @@ HyperDB.prototype._ready = function (cb) {
     self.source = self._checkout.source
     self.local = self._checkout.local
     self.localContent = self._checkout.localContent
+    self._localWriter = self._checkout._localWriter
     self.key = self._checkout.key
     self.discoveryKey = self._checkout.discoveryKey
     self._heads = heads
@@ -690,6 +696,16 @@ Writer.prototype.authorize = function () {
   this._authorized = true
   this._db._authorized.push(this._id)
   if (this._feedsMessage) this._updateFeeds()
+}
+
+Writer.prototype.ensureHeader = function (cb) {
+  if (this._feed.length) return cb(null)
+
+  var header = {
+    protocol: 'hyperdb'
+  }
+
+  this._feed.append(messages.Header.encode(header), cb)
 }
 
 Writer.prototype.append = function (entry, cb) {
@@ -776,7 +792,6 @@ Writer.prototype._decode = function (seq, buf, cb) {
 
 Writer.prototype.get = function (seq, cb) {
   var self = this
-
   var cached = this._cache.get(seq)
   if (cached) return process.nextTick(cb, null, cached, this._id)
 
@@ -796,7 +811,7 @@ Writer.prototype._getFeed = function (seq, cb) {
 
 Writer.prototype.head = function (cb) {
   var len = this.length()
-  if (!len) return process.nextTick(cb, null, null, this._id)
+  if (len < 2) return process.nextTick(cb, null, null, this._id)
   this.get(len - 1, cb)
 }
 

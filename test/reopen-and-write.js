@@ -37,11 +37,11 @@ tape('3 writers, re-open and write, re-open again', function (t) {
     }
 
     function testInflateValue (cb) {
-      t.equals(reopened.source.length, 4, 'correct length')
-      reopened.source.get(3, function (err, data) {
+      t.equals(reopened.source.length, 5, 'correct length')
+      reopened.source.get(4, function (err, data) {
         t.error(err, 'no error')
         var val = messages.Entry.decode(data)
-        t.equal(val.inflate, 1, 'correct inflate for new entry')
+        t.equal(val.inflate, 2, 'correct inflate for new entry')
         cb()
       })
     }
