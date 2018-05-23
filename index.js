@@ -768,7 +768,11 @@ Writer.prototype._maybeUpdateFeeds = function () {
 }
 
 Writer.prototype._decode = function (seq, buf, cb) {
-  var val = messages.Entry.decode(buf)
+  try {
+    var val = messages.Entry.decode(buf)
+  } catch (e) {
+    return cb(e)
+  }
   val[util.inspect.custom] = inspect
   val.seq = seq
   val.path = hash(val.key, true)
@@ -834,6 +838,11 @@ Writer.prototype._loadFeeds = function (head, buf, cb) {
 
   function onfeeds (err, buf) {
     if (err) return cb(err)
+    try {
+      var msg = messages.InflatedEntry.decode(buf)
+    } catch (e) {
+      return cb(e)
+    }
     done(messages.InflatedEntry.decode(buf))
   }
 
