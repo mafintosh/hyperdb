@@ -776,7 +776,11 @@ Writer.prototype._decode = function (seq, buf, cb) {
   val[util.inspect.custom] = inspect
   val.seq = seq
   val.path = hash(val.key, true)
-  val.value = val.value && this._db._valueEncoding.decode(val.value)
+  try {
+    val.value = val.value && this._db._valueEncoding.decode(val.value)
+  } catch (e) {
+    return cb(e)
+  }
 
   if (this._feedsMessage && this._feedsLoaded === val.inflate) {
     this._maybeUpdateFeeds()
