@@ -219,16 +219,21 @@ HyperDB.prototype.heads = function (cb) {
   if (!this.opened) return readyAndHeads(this, cb)
   if (this._heads) return process.nextTick(cb, null, this._heads)
 
+  var self = this
+
   // This is a bit of a hack. Basically when the db is empty
   // we wanna wait for data to come in. TODO: We should guarantee
   // that the db always has a single block of data (like a header)
   if (this._waitForUpdate()) {
     this.setMaxListeners(0)
-    this.once('remote-update', this.heads.bind(this, cb))
+    this.once('remote-update', function () {
+      process.nextTick(function () {
+        self.heads.bind(self, cb)
+      })
+    })
     return
   }
 
-  var self = this
   var len = this._writers.length
   var missing = len
   var error = null
