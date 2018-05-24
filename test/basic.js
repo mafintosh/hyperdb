@@ -474,3 +474,16 @@ tape('can insert falsy values', function (t) {
     })
   })
 })
+
+tape('can put/get a null value', function (t) {
+  t.plan(3)
+
+  var db = create.one(null, {valueEncoding: 'json'})
+  db.put('some key', null, function (err) {
+    t.error(err, 'no error')
+    db.get('some key', function (err, node) {
+      t.error(err, 'no error')
+      t.same(node.value, null)
+    })
+  })
+})

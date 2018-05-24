@@ -129,7 +129,8 @@ HyperDB.prototype.batch = function (batch, cb) {
   })
 }
 
-HyperDB.prototype.put = function (key, val, cb) {
+HyperDB.prototype.put = function (key, val, opts, cb) {
+  if (typeof opts === 'function') return this.put(key, val, null, opts)
   if (!cb) cb = noop
 
   if (this._checkout) {
@@ -144,7 +145,7 @@ HyperDB.prototype.put = function (key, val, cb) {
     var clock = self._clock()
     self.heads(function (err, heads) {
       if (err) return unlock(err)
-      put(self, clock, heads, key, val, unlock)
+      put(self, clock, heads, key, val, opts, unlock)
     })
 
     function unlock (err, node) {
@@ -154,7 +155,7 @@ HyperDB.prototype.put = function (key, val, cb) {
 }
 
 HyperDB.prototype.del = function (key, cb) {
-  this.put(key, null, cb)
+  this.put(key, null, { delete: true }, cb)
 }
 
 HyperDB.prototype.watch = function (key, cb) {
