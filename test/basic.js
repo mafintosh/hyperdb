@@ -302,6 +302,34 @@ tape('basic batch', function (t) {
   })
 })
 
+tape('batch with del', function (t) {
+  t.plan(1 + 1 + 3 + 2)
+
+  var db = create.one()
+
+  db.batch([
+    {key: 'hello', value: 'world'},
+    {key: 'hej', value: 'verden'},
+    {key: 'hello', value: 'welt'}
+  ], function (err) {
+    t.error(err, 'no error')
+    db.batch([
+      {key: 'hello', value: 'verden'},
+      {type: 'del', key: 'hej'}
+    ], function (err) {
+      t.error(err, 'no error')
+      db.get('hello', function (err, node) {
+        t.error(err, 'no error')
+        t.same(node.key, 'hello')
+        t.same(node.value, 'verden')
+      })
+      db.get('hej', function (err, node) {
+        t.error(err, 'no error')
+        t.same(node, null)
+      })
+    })
+  })
+})
 tape('multiple batches', function (t) {
   t.plan(19)
 
