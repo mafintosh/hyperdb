@@ -116,7 +116,7 @@ HyperDB.prototype.batch = function (batch, cb) {
         }
 
         var next = batch[i++]
-        put(self, clock, heads, next.key, next.value || null, loop)
+        put(self, clock, heads, next.key, next.value, {delete: next.type === 'del'}, loop)
       }
 
       function done (err) {
@@ -741,7 +741,7 @@ Writer.prototype.append = function (entry, cb) {
   mapped.clock = this._mapList(entry.clock, this._encodeMap, 0)
   mapped.inflate = this._feeds
   mapped.trie = trie.encode(entry.trie, this._encodeMap)
-  if (entry.value !== null) mapped.value = this._db._valueEncoding.encode(entry.value)
+  if (!isNullish(entry.value)) mapped.value = this._db._valueEncoding.encode(entry.value)
 
   if (this._db._batching) {
     this._db._batching.push(enc.encode(mapped))
@@ -1031,6 +1031,10 @@ function createStorage (st) {
 
 function reduceFirst (a, b) {
   return a
+}
+
+function isNullish (v) {
+  return v === null || v === undefined
 }
 
 function noop () {}
