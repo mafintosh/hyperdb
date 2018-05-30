@@ -417,6 +417,7 @@ HyperDB.prototype._writer = function (dir, key, opts) {
   return writer
 
   function onwrite (index, data, peer, cb) {
+    if (!index) return cb(null) // do not intercept the header
     if (peer) peer.maxRequests++
     if (index >= writer._writeLength) writer._writeLength = index + 1
     writer._writes.set(index, data)
