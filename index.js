@@ -254,7 +254,7 @@ HyperDB.prototype.heads = function (cb) {
 }
 
 HyperDB.prototype._waitForUpdate = function () {
-  return !this._writers[0].length() && !this.local.length
+  return !this._writers[0].length() && this.local.length < 2
 }
 
 HyperDB.prototype._index = function (key) {
