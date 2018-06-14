@@ -119,6 +119,27 @@ tape('three feeds with all conflicting', (t) => {
   })
 }, { timeout: 1000 })
 
+tape('three feeds (again)', (t) => {
+  const toVersion = v => ({ key: 'version', value: v })
+  create.three((db1, db2, db3, replicateAll) => {
+    const len = 5
+    const expected = []
+    for (var i = 0; i < len * 3; i++) {
+      expected.push(i.toString())
+    }
+    run(
+      cb => put(db1, expected.slice(0, len).map(toVersion), cb),
+      replicateAll,
+      cb => put(db2, expected.slice(len, len * 2).map(toVersion), cb),
+      replicateAll,
+      cb => put(db3, expected.slice(len * 2).map(toVersion), cb),
+      replicateAll,
+      cb => testHistory(t, db1, 'version', expected.reverse(), cb),
+      t.end
+    )
+  })
+}, { timeout: 1000 })
+
 function testHistory (t, db, key, expected, cb) {
   const results = expected.slice(0)
   const stream = toStream(keyHistory(db, key))
