@@ -213,14 +213,14 @@ current version prefixed by `prefix`.
 `left` are the nodes for a key found in the `db` and `right` are the nodes found in the `checkout`.
 If no nodes exist in the `db` for the key `left` will be `null` and vice versa.
 
-#### `var stream = db.createHistoryStream([options])`
+#### `var stream = db.createHistoryStream([key], [options])`
 
-Returns a readable stream of node objects covering all historic values since the beginning of time
+Returns a readable stream of node objects covering all historic values since the beginning of time. Provide `key` as the first argument to limit historic values to that key.
 
 Nodes are emitted in topographic order, meaning if value `v2` was aware of value
 `v1` at its insertion time, `v1` must be emitted before `v2`.
 
-To emit the nodes in reverse order pass `{reverse: true}` as an option.
+To emit the nodes in reverse order pass `{reverse: true}` as an option. Reverse option currently does not work when the stream is limited to a specific key.
 
 #### `var stream = db.replicate([options])`
 
