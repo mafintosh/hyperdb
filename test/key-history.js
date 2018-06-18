@@ -143,7 +143,6 @@ function testHistory (t, db, key, expected, cb) {
   var stream = db.createHistoryStream(key)
   stream.on('data', (data) => {
     var expected = results.shift()
-    // console.log(data, expected)
     t.notEqual(expected, undefined)
     if (!Array.isArray(expected)) expected = [expected]
     t.same(data.length, expected.length)
@@ -152,7 +151,6 @@ function testHistory (t, db, key, expected, cb) {
     })
   })
   stream.on('end', () => {
-    // console.log('end')
     t.same(results.length, 0)
     cb()
   })
