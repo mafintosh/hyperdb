@@ -1,11 +1,9 @@
 var tape = require('tape')
-var toStream = require('nanoiterator/to-stream')
 
 var replicate = require('./helpers/replicate')
 var create = require('./helpers/create')
 var put = require('./helpers/put')
 var run = require('./helpers/run')
-var keyHistory = require('../lib/key-history')
 
 tape('empty db', (t) => {
   var db = create.one()
@@ -120,10 +118,10 @@ tape('three feeds with all conflicting', (t) => {
 }, { timeout: 1000 })
 
 tape('three feeds (again)', (t) => {
-  const toVersion = v => ({ key: 'version', value: v })
+  var toVersion = v => ({ key: 'version', value: v })
   create.three((db1, db2, db3, replicateAll) => {
-    const len = 5
-    const expected = []
+    var len = 5
+    var expected = []
     for (var i = 0; i < len * 3; i++) {
       expected.push(i.toString())
     }
@@ -141,8 +139,8 @@ tape('three feeds (again)', (t) => {
 }, { timeout: 1000 })
 
 function testHistory (t, db, key, expected, cb) {
-  const results = expected.slice(0)
-  const stream = toStream(keyHistory(db, key))
+  var results = expected.slice(0)
+  var stream = db.createHistoryStream(key)
   stream.on('data', (data) => {
     var expected = results.shift()
     // console.log(data, expected)
