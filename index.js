@@ -413,6 +413,7 @@ HyperDB.prototype._writer = function (dir, key, opts) {
   writer = new Writer(self, feed)
   feed.on('append', onappend)
   feed.on('remote-update', onremoteupdate)
+  feed.on('update', onupdate)
   feed.on('sync', onreloadhead)
 
   if (key) addWriter(null)
@@ -437,6 +438,10 @@ HyperDB.prototype._writer = function (dir, key, opts) {
     if (peer) peer.maxRequests--
     writer._writes.delete(index)
     cb(err)
+  }
+
+  function onupdate () {
+    self.emit('update', feed, writer._id)
   }
 
   function onremoteupdate () {
