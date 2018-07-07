@@ -116,7 +116,7 @@ HyperDB.prototype.batch = function (batch, cb) {
         }
 
         var next = batch[i++]
-        put(self, clock, heads, next.key, next.value, {delete: next.type === 'del'}, loop)
+        put(self, clock, heads, normalizeKey(next.key), next.value, {delete: next.type === 'del'}, loop)
       }
 
       function done (err) {
