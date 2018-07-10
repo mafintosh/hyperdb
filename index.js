@@ -507,12 +507,12 @@ HyperDB.prototype.list = function (prefix, opts, cb) {
   }
 }
 
-HyperDB.prototype.history = function (prefix, opts) {
-  if (prefix && !isOptions(prefix)) {
-    console.log('KEY')
-    return keyHistory(this, prefix, opts)
-  }
-  return history(this, prefix)
+HyperDB.prototype.history = function (opts) {
+  return history(this, opts)
+}
+
+HyperDB.prototype.keyHistory = function (prefix, opts) {
+  return keyHistory(this, prefix, opts)
 }
 
 HyperDB.prototype.diff = function (other, prefix, opts) {
@@ -525,8 +525,12 @@ HyperDB.prototype.iterator = function (prefix, opts) {
   return iterator(this, normalizeKey(prefix || ''), opts)
 }
 
-HyperDB.prototype.createHistoryStream = function (prefix, opts) {
-  return toStream(this.history(prefix, opts))
+HyperDB.prototype.createHistoryStream = function (opts) {
+  return toStream(this.history(opts))
+}
+
+HyperDB.prototype.createKeyHistoryStream = function (prefix, opts) {
+  return toStream(this.keyHistory(prefix, opts))
 }
 
 HyperDB.prototype.createDiffStream = function (other, prefix, opts) {

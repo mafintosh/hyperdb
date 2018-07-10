@@ -140,7 +140,7 @@ tape('three feeds (again)', (t) => {
 
 function testHistory (t, db, key, expected, cb) {
   var results = expected.slice(0)
-  var stream = db.createHistoryStream(key)
+  var stream = db.createKeyHistoryStream(key)
   stream.on('data', (data) => {
     var expected = results.shift()
     t.notEqual(expected, undefined)
