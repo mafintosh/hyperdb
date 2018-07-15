@@ -216,12 +216,18 @@ If no nodes exist in the `db` for the key `left` will be `null` and vice versa.
 
 #### `var stream = db.createHistoryStream([options])`
 
-Returns a readable stream of node objects covering all historic values since the beginning of time
+Returns a readable stream of node objects covering all historic values since the beginning of time.
 
 Nodes are emitted in topographic order, meaning if value `v2` was aware of value
 `v1` at its insertion time, `v1` must be emitted before `v2`.
 
 To emit the nodes in reverse order pass `{reverse: true}` as an option.
+
+#### `var stream = db.createKeyHistoryStream(key)`
+
+Returns a readable stream of node objects covering all historic values for a specific key.
+
+Results are returned with the latest value first.
 
 #### `var stream = db.replicate([options])`
 

@@ -18,6 +18,7 @@ var hash = require('./lib/hash')
 var iterator = require('./lib/iterator')
 var differ = require('./lib/differ')
 var history = require('./lib/history')
+var keyHistory = require('./lib/key-history')
 var get = require('./lib/get')
 var put = require('./lib/put')
 var messages = require('./lib/messages')
@@ -510,6 +511,10 @@ HyperDB.prototype.history = function (opts) {
   return history(this, opts)
 }
 
+HyperDB.prototype.keyHistory = function (prefix, opts) {
+  return keyHistory(this, prefix, opts)
+}
+
 HyperDB.prototype.diff = function (other, prefix, opts) {
   if (isOptions(prefix)) return this.diff(other, null, prefix)
   return differ(this, other || checkoutEmpty(this), prefix || '', opts)
@@ -522,6 +527,10 @@ HyperDB.prototype.iterator = function (prefix, opts) {
 
 HyperDB.prototype.createHistoryStream = function (opts) {
   return toStream(this.history(opts))
+}
+
+HyperDB.prototype.createKeyHistoryStream = function (prefix, opts) {
+  return toStream(this.keyHistory(prefix, opts))
 }
 
 HyperDB.prototype.createDiffStream = function (other, prefix, opts) {
