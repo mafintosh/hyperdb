@@ -184,6 +184,7 @@ Options include:
 {
   recursive: true // visit all subfolders.
                   // set to false to only visit the first node in each folder
+  reverse: true   // read the records in reverse order.
   gt: false       // visit only strictly nodes that are > than the prefix
 }
 ```
