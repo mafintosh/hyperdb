@@ -298,6 +298,14 @@ tape('2 unauthed clones', function (t) {
   })
 })
 
+tape('opts is not mutated', function (t) {
+  var db = create.one()
+  var opts = {}
+  db.replicate(opts)
+  t.deepEqual(opts, {})
+  t.end()
+})
+
 function range (n) {
   return Array(n).join(',').split(',').map((_, i) => '' + i)
 }

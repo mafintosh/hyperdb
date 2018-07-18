@@ -38,7 +38,7 @@ function HyperDB (storage, key, opts) {
     key = null
   }
 
-  if (!opts) opts = {}
+  opts = Object.assign({}, opts)
   if (opts.firstNode) opts.reduce = reduceFirst
 
   var checkout = opts.checkout
@@ -295,7 +295,7 @@ HyperDB.prototype.authorize = function (key, cb) {
 }
 
 HyperDB.prototype.replicate = function (opts) {
-  if (!opts) opts = {}
+  opts = Object.assign({}, opts)
 
   var self = this
   var expectedFeeds = Math.max(1, this._authorized.length)

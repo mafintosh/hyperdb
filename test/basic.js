@@ -515,3 +515,10 @@ tape('can put/get a null value', function (t) {
     })
   })
 })
+
+tape('opts is not mutated', function (t) {
+  var opts = {firstNode: true}
+  create.one(opts)
+  t.deepEqual(opts, {firstNode: true})
+  t.end()
+})
