@@ -535,26 +535,27 @@ tape('does not reinsert if isNotExists is true in put', function (t) {
 })
 
 tape('normal insertions work with ifNotExists', function (t) {
-  t.plan(7)
+  t.plan(5)
 
-  var db = create.one(null, {valueEncoding: 'utf8'})
-  db.put('some key', 'hello', { ifNotExists: true }, function (err) {
+  var db = create.one()
+  run(
+    cb => db.put('some key', 'hello', { ifNotExists: true }, cb),
+    cb => db.put('some key', 'goodbye', { ifNotExists: true }, cb),
+    cb => db.put('another key', 'something else', { ifNotExists: true }, cb),
+    done
+  )
+
+  function done (err) {
     t.error(err, 'no error')
-    db.put('some key', 'goodbye', { ifNotExists: true }, function (err) {
+    db.get('some key', function (err, node) {
       t.error(err, 'no error')
-      db.put('another key', 'something else', { ifNotExists: true }, function (err) {
+      t.same(node.value, 'hello')
+      db.get('another key', function (err, node) {
         t.error(err, 'no error')
-        db.get('some key', function (err, node) {
-          t.error(err, 'no error')
-          t.same(node.value, 'hello')
-          db.get('another key', function (err, node) {
-            t.error(err, 'no error')
-            t.same(node.value, 'something else')
-          })
-        })
+        t.same(node.value, 'something else')
       })
     })
-  })
+  }
 })
 
 tape('put with ifNotExists does not reinsert with conflict', function (t) {
