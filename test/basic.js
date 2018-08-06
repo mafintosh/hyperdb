@@ -1,6 +1,8 @@
 var tape = require('tape')
-var create = require('./helpers/create')
 var Readable = require('stream').Readable
+
+var create = require('./helpers/create')
+var run = require('./helpers/run')
 
 tape('basic put/get', function (t) {
   var db = create.one()
@@ -513,6 +515,78 @@ tape('can put/get a null value', function (t) {
       t.error(err, 'no error')
       t.same(node.value, null)
     })
+  })
+})
+
+tape('does not reinsert if isNotExists is true in put', function (t) {
+  t.plan(4)
+
+  var db = create.one(null, {valueEncoding: 'utf8'})
+  db.put('some key', 'hello', function (err) {
+    t.error(err, 'no error')
+    db.put('some key', 'goodbye', { ifNotExists: true }, function (err) {
+      t.error(err, 'no error')
+      db.get('some key', function (err, node) {
+        t.error(err, 'no error')
+        t.same(node.value, 'hello')
+      })
+    })
+  })
+})
+
+tape('normal insertions work with ifNotExists', function (t) {
+  t.plan(7)
+
+  var db = create.one(null, {valueEncoding: 'utf8'})
+  db.put('some key', 'hello', { ifNotExists: true }, function (err) {
+    t.error(err, 'no error')
+    db.put('some key', 'goodbye', { ifNotExists: true }, function (err) {
+      t.error(err, 'no error')
+      db.put('another key', 'something else', { ifNotExists: true }, function (err) {
+        t.error(err, 'no error')
+        db.get('some key', function (err, node) {
+          t.error(err, 'no error')
+          t.same(node.value, 'hello')
+          db.get('another key', function (err, node) {
+            t.error(err, 'no error')
+            t.same(node.value, 'something else')
+          })
+        })
+      })
+    })
+  })
+})
+
+tape('put with ifNotExists does not reinsert with conflict', function (t) {
+  t.plan(5)
+
+  create.two(function (db1, db2, replicate) {
+    run(
+      cb => db1.put('0', '0', cb),
+      replicate,
+      cb => db1.put('1', '1a', cb),
+      cb => db2.put('1', '1b', cb),
+      cb => db1.put('10', '10', cb),
+      replicate,
+      cb => db1.put('2', '2', cb),
+      cb => db1.put('1/0', '1/0', cb),
+      done
+    )
+
+    function done (err) {
+      t.error(err, 'no error')
+      db1.put('1', '1c', { ifNotExists: true }, function (err) {
+        t.error(err, 'no error')
+        db1.get('1', function (err, nodes) {
+          t.error(err, 'no error')
+          t.same(nodes.length, 2)
+          var vals = nodes.map(function (n) {
+            return n.value
+          })
+          t.same(vals, ['1b', '1a'])
+        })
+      })
+    }
   })
 })
 
