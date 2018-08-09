@@ -351,6 +351,56 @@ tape('list buffers an iterator', function (t) {
   })
 })
 
+tape('options to get deleted keys', function (t) {
+  var db = create.one()
+  run(
+    cb => put(db, ['a', 'b', 'c'], cb),
+    cb => db.del('a', cb),
+    done
+  )
+  function done () {
+    all(db.iterator({ deletes: true }), function (err, map) {
+      t.error(err, 'no error')
+      t.same(map, { a: null, 'b': 'b', c: 'c' }, 'iterated all values')
+      t.end()
+    })
+  }
+})
+
+tape('three writers, two forks with deletes', function (t) {
+  t.plan(2 * 3 + 1)
+
+  var replicate = require('./helpers/replicate')
+
+  create.three(function (a, b, c, replicateAll) {
+    run(
+      cb => a.put('a', 'a', cb),
+      replicateAll,
+      cb => b.put('a', 'ab', cb),
+      cb => a.put('some', 'some', cb),
+      cb => replicate(a, c, cb),
+      cb => c.put('c', 'c', cb),
+      cb => c.del('c', cb),
+      cb => a.del('a', cb),
+      cb => a.del('some', cb),
+      replicateAll,
+      done
+    )
+
+    function done (err) {
+      t.error(err, 'no error')
+      all(a.iterator({ deletes: true }), onall)
+      all(b.iterator({ deletes: true }), onall)
+      all(c.iterator({ deletes: true }), onall)
+
+      function onall (err, map) {
+        t.error(err, 'no error')
+        t.same(map, {a: ['ab', null], c: [null], some: [null]})
+      }
+    }
+  })
+})
+
 function range (n, v) {
   // #0, #1, #2, ...
   return new Array(n).join('.').split('.').map((a, i) => v + i)
