@@ -188,3 +188,21 @@ tape('readStream with conflicting feeds', { timeout: 2000 }, function (t) {
     }
   })
 })
+
+tape('returns no data if db is empty', function (t) {
+  var db = create.one()
+  var reader = db.createReadStream('foo/')
+
+  reader.on('data', (data) => {
+    t.fail('should be no data')
+    t.end()
+  })
+  reader.on('end', () => {
+    t.ok('everything is ok')
+    t.end()
+  })
+  reader.on('error', (err) => {
+    t.fail(err.message)
+    t.end()
+  })
+})
