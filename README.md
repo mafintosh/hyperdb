@@ -241,7 +241,7 @@ Options include:
 }
 ```
 
-#### `var stream = db.createKeyHistoryStream(key)`
+#### `var stream = db.createKeyHistoryStream(key[, options)`
 
 Returns a readable stream of node objects covering all historic values for a specific key.
 
