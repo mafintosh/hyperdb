@@ -98,10 +98,18 @@ array of nodes returned from `db.heads`.
 
 Insert a new value. Will merge any previous values seen for this key.
 
-#### `db.get(key, callback)`
+#### `db.get(key[, options], callback)`
 
 Lookup a string `key`. Returns a nodes array with the current values for this key.
 If there is no current conflicts for this key the array will only contain a single node.
+
+Options include:
+
+```js
+{
+  update: true    // wait for a remote update if the db is empty (only for readers)
+}
+```
 
 #### `db.del(key, callback)`
 
@@ -186,6 +194,7 @@ Options include:
                   // set to false to only visit the first node in each folder
   reverse: true   // read the records in reverse order.
   gt: false       // visit only strictly nodes that are > than the prefix
+  update: true    // wait for a remote update if the db is empty (only for readers)
 }
 ```
 
@@ -223,11 +232,28 @@ Nodes are emitted in topographic order, meaning if value `v2` was aware of value
 
 To emit the nodes in reverse order pass `{reverse: true}` as an option.
 
+Options include:
+
+```js
+{
+  reverse: true   // read the records in reverse order.
+  update: true    // wait for a remote update if the db is empty (only for readers)
+}
+```
+
 #### `var stream = db.createKeyHistoryStream(key)`
 
 Returns a readable stream of node objects covering all historic values for a specific key.
 
 Results are returned with the latest value first.
+
+Options include:
+
+```js
+{
+  update: true    // wait for a remote update if the db is empty (only for readers)
+}
+```
 
 #### `var stream = db.replicate([options])`
 
