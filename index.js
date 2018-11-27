@@ -586,7 +586,7 @@ HyperDB.prototype.audit = function (cb) {
 
   function finish () {
     var errs = results.map(r => r.err).filter(r => r)
-    if (errs) cb(errs, results)
+    if (errs.length) cb(errs, results)
     else cb(null, results)
   }
 }
