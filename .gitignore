@@ -4,3 +4,4 @@ db
 *.db
 *.log
 NOTES.txt
+package-lock.json
