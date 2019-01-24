@@ -206,3 +206,40 @@ tape('returns no data if db is empty', function (t) {
     t.end()
   })
 })
+
+tape('db is empty, being reader with update in true', function (t) {
+  var a = create.one()
+  a.ready(function () {
+    var b = create.one(a.key)
+    var rs = b.createReadStream({ update: true })
+    var callEnd = false
+    rs.on('data', () => {})
+    rs.on('end', () => {
+      callEnd = true
+    })
+
+    setTimeout(() => {
+      t.notOk(callEnd, 'the stream should stay open and waiting for remote updates')
+      t.end()
+    })
+  })
+})
+
+tape('db is empty, being reader with update in false', function (t) {
+  var a = create.one()
+
+  a.ready(function () {
+    var b = create.one(a.key)
+    var rs = b.createReadStream({ update: false })
+    var callEnd = false
+    rs.on('data', () => {})
+    rs.on('end', () => {
+      callEnd = true
+    })
+
+    setTimeout(() => {
+      t.ok(callEnd, 'the stream should end and not wait for remote updates')
+      t.end()
+    })
+  })
+})

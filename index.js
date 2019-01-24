@@ -217,8 +217,13 @@ HyperDB.prototype.snapshot = function (opts) {
   return this.checkout(null, opts)
 }
 
-HyperDB.prototype.heads = function (cb) {
-  this._getHeads(true, cb)
+HyperDB.prototype.heads = function (update, cb) {
+  if (typeof update === 'function') {
+    cb = update
+    update = true
+  }
+
+  this._getHeads(update, cb)
 }
 
 HyperDB.prototype._getHeads = function (update, cb) {
