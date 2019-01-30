@@ -562,6 +562,35 @@ HyperDB.prototype.createWriteStream = function (cb) {
   }
 }
 
+HyperDB.prototype.audit = function (cb) {
+  var self = this
+  var results = []
+  var len
+
+  audit()
+
+  function audit () {
+    len = self._writers.length
+    self._writers.forEach(function (writer) {
+      var feed = writer._feed
+      feed.audit(collect(feed.key))
+    })
+  }
+
+  function collect (key) {
+    return function (err, res) {
+      results.push({ key, err, res })
+      if (results.length === len) finish()
+    }
+  }
+
+  function finish () {
+    var errs = results.map(r => r.err).filter(r => r)
+    if (errs.length) cb(errs, results)
+    else cb(null, results)
+  }
+}
+
 HyperDB.prototype._ready = function (cb) {
   var self = this
 

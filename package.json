@@ -8,7 +8,7 @@
     "bulk-write-stream": "^1.1.3",
     "codecs": "^1.2.1",
     "compare": "^2.0.0",
-    "hypercore": "^6.13.0",
+    "hypercore": "^6.21.0",
     "hypercore-protocol": "^6.6.4",
     "inherits": "^2.0.3",
     "mutexify": "^1.2.0",
