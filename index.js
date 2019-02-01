@@ -65,6 +65,8 @@ function HyperDB (storage, key, opts) {
   this._watching = checkout ? checkout._watching : []
   this._replicating = []
   this._localWriter = null
+  this._localKey = opts.localKey || null
+  this._localSecretKey = opts.localSecretKey || null
   this._byKey = new Map()
   this._heads = opts.heads || null
   this._version = opts.version || null
@@ -582,7 +584,7 @@ HyperDB.prototype._ready = function (cb) {
   this.source.ready(function (err) {
     if (err) return done(err)
     if (self.source.writable) self.local = self.source
-    if (!self.local) self.local = feed('local')
+    if (!self.local) self.local = feed('local', self._localKey, { secretKey: self._localSecretKey })
 
     self.key = self.source.key
     self.discoveryKey = self.source.discoveryKey
