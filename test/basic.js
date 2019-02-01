@@ -5,10 +5,11 @@ var create = require('./helpers/create')
 var run = require('./helpers/run')
 
 tape('reproducible local hypercore', function (t) {
+  var key = Buffer.from('de14f28853123596830410a371b38bd4768fcb95880142e9e54a00aa8c418158', 'hex')
   var localKey = Buffer.from('c575d78d42d42b88db80c3b66ba6cacdb0e633f98e375226b23788c5d5dd4a17', 'hex')
   var localSecretKey = Buffer.from('778e1ed4513175ebac7cfcc97dbde5bd87795c990811784e85de0abc3b2da36ac575d78d42d42b88db80c3b66ba6cacdb0e633f98e375226b23788c5d5dd4a17', 'hex')
 
-  var db = create.one(null, {
+  var db = create.one(key, {
     localKey,
     localSecretKey
   })
