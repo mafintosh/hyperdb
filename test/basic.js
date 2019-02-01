@@ -4,6 +4,22 @@ var Readable = require('stream').Readable
 var create = require('./helpers/create')
 var run = require('./helpers/run')
 
+tape('reproducible local hypercore', function (t) {
+  var localKey = Buffer.from('c575d78d42d42b88db80c3b66ba6cacdb0e633f98e375226b23788c5d5dd4a17', 'hex')
+  var localSecretKey = Buffer.from('778e1ed4513175ebac7cfcc97dbde5bd87795c990811784e85de0abc3b2da36ac575d78d42d42b88db80c3b66ba6cacdb0e633f98e375226b23788c5d5dd4a17', 'hex')
+
+  var db = create.one(null, {
+    localKey,
+    localSecretKey
+  })
+
+  db.on('ready', function () {
+    t.same(db.local.key, localKey)
+    t.same(db.local.secretKey, localSecretKey)
+    t.end()
+  })
+})
+
 tape('basic put/get', function (t) {
   var db = create.one()
   db.put('hello', 'world', function (err, node) {
