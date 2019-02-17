@@ -62,9 +62,13 @@ Options include:
   map: node => mappedNode, // map nodes before returning them
   reduce: (a, b) => someNode, // reduce the nodes array before returning it
   firstNode: false, // set to true to reduce the nodes array to the first node in it
-  valueEncoding: 'binary' // set the value encoding of the db
+  valueEncoding: 'binary', // set the value encoding of the db
+  localKey: localKeyBuffer, // public key to use for the local writer
+  localSecretKey: localSecretKeyBuffer // secret key to use for the local writer
 }
 ```
+
+The `localKey` and `localSecretKey` options are useful when you need reproducible local writers (for example to recreate a database). If they are not provided, a new key pair will be generated for the local writer. If provided, both keys must be provided together.
 
 #### `db.key`
 
