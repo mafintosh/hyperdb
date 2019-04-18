@@ -239,6 +239,68 @@ Create a replication stream. Options include:
 }
 ```
 
+## Replicating over network with hyperdiscovery
+
+In order to have your hyperdb replicate to remote peers, you must use [hyperdiscovery](https://github.com/karissa/hyperdiscovery). hyperdiscovery handles all of the peer discovery, replication, and streaming so that you don't have to.
+
+Once a peer is discovered and connected to, you can choose to authorize that peer so that they can write changes to your hyperdb, or leave them unauthorized and replication will only happen one way.
+
+Below is the most basic example of using hyperdiscovery to set up a hyperdb that can be read from and written to by any peer:
+
+```js
+const hyperdb = require('hyperdb')
+const hyperdiscovery = require('hyperdiscovery')
+
+const db = hyperdb('./my.db', { valueEncoding: 'utf-8' })
+
+db.on('ready', () => {
+  // log your key, peers will need it to find your hyperdb
+  console.log(`your hyperdb key is: ${db.key}`)
+
+  const swarm = hyperdiscovery(db)
+
+  swarm.on('connection', (peer, info) => {
+    console.log(`a peer at ${info.host} connected. ${swarm.connections.length} total`)
+
+    // determine if this peer is already authorized, and if not, authorize them
+    // see below for more about authorization
+    db.authorized(peer.remoteUserData, (err, auth) => {
+      if (!err) {
+        if (!auth) {
+          db.authorize(peer.remoteUserData, err => {
+            if (!err) {
+              console.log(`peer at ${info.host} was authorized`)
+            } else {
+              console.error(err)
+            }
+          })
+        }
+      } else {
+        console.error(err)
+      }
+    })
+
+    peer.on('close', () => {
+      console.log(`a peer at ${info.host} disconnected`)
+    })
+  })
+})
+```
+
+The code for each peer is identical, apart from the fact that every peer after your original needs to initialize their hyperdb with the key for your hyperdb:
+
+```js
+const db = hyperdb('./my.db', [DB_KEY], { valueEncoding: 'utf-8' })
+```
+
+Now, any changes made to your hyperdb will be reflected in peer hyperdbs. If a peer is authorized, then any changes made to their hyperdb will also be reflected in yours.
+
+#### A bit about authorization
+
+The example above creates a hyperdb that can be written to by every peer on the network. If this isn't what you want, then it is also possible to authorize peers more selectively or not at all.
+
+For example, you may have a system that requires peers to ask for permission before they are authorized. Or perhaps a system whereby only the 'master' database will ever have changes made to it and these changes will be reflected in all of the 'slave' peers, in which case none of the peers will need to be authorized.
+
 ## License
 
 MIT
