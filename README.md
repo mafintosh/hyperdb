@@ -239,6 +239,61 @@ Create a replication stream. Options include:
 }
 ```
 
+## Replicating over network with hyperdiscovery
+
+In order to have your hyperdb replicate to remote peers, you must use [hyperdiscovery](https://github.com/karissa/hyperdiscovery). hyperdiscovery handles all of the peer discovery, replication, and streaming so that you don't have to.
+
+Once a peer is discovered and connected to, you must authorize that peer so that they can write changes to your hyperdb, otherwise replication will only happen one way.
+
+Below is the most basic example of using hyperdiscovery to set up 2-way replication with a remote peer:
+
+```js
+const hyperdb = require('hyperdb')
+const hyperdiscovery = require('hyperdiscovery')
+
+const db = hyperdb('./my.db', { valueEncoding: 'utf-8' })
+
+db.on('ready', () => {
+  // log your key, peers will need it to find your hyperdb
+  console.log(`your hyperdb key is: ${db.key}`)
+
+  const swarm = hyperdiscovery(db)
+
+  swarm.on('connection', (peer, info) => {
+    console.log(`a peer at ${info.host} connected. ${swarm.connections.length} total`)
+
+    // determine if this peer is already authorized, and if not, authorize them
+    db.authorized(peer.remoteUserData, (err, auth) => {
+      if (!err) {
+        if (!auth) {
+          db.authorize(peer.remoteUserData, err => {
+            if (!err) {
+              console.log(`peer at ${info.host} was authorized`)
+            } else {
+              console.error(err)
+            }
+          })
+        }
+      } else {
+        console.error(err)
+      }
+    })
+
+    peer.on('close', () => {
+      console.log(`a peer at ${info.host} disconnected`)
+    })
+  })
+})
+```
+
+The code for each peer is identical, apart from the fact that every peer after your original needs to initialize their hyperdb with the key for your hyperdb:
+
+```js
+const db = hyperdb('./my.db', [DB_KEY], { valueEncoding: 'utf-8' })
+```
+
+Once the peer is authorized, any changes made to your hyperdb will be reflected in the peers and vice versa.
+
 ## License
 
 MIT
